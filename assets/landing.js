@@ -45,6 +45,7 @@
     document.getElementById('tape').innerHTML = tapeHTML + tapeHTML;
 
     document.getElementById('stamp').textContent = `Quotes updated ${PS.fmtUpdated(q.updated)}.`;
+    document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
   } catch (e) { console.error(e); }
 
   // real AAPL revenue mini-chart + price

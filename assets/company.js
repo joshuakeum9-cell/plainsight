@@ -36,7 +36,7 @@
   document.getElementById('rBadges').innerHTML = badges.map((b) => `<span class="badge-pill">${b}</span>`).join('');
   document.getElementById('rPrice').textContent = price != null ? `$${PS.fmtPrice(price)}` : '-';
   document.getElementById('rChange').innerHTML = PS.changeChip(quote.c, quote.cp);
-  document.getElementById('rStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
+  document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
   if (quote.h52 != null && quote.l52 != null && quote.h52 > quote.l52 && price != null) {
     const pos = ((price - quote.l52) / (quote.h52 - quote.l52)) * 100;
     document.querySelector('#r52track .fill').style.left = `calc(${Math.max(0, Math.min(100, pos)).toFixed(1)}% - 6px)`;

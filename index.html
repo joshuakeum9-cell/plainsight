@@ -40,15 +40,6 @@
   .mockup-band { background: var(--surface-soft); border-radius: var(--r-xl); padding: 64px; display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-xxl); align-items: center; }
   .mockup-card { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-lg); padding: var(--sp-lg); box-shadow: 0 12px 40px rgba(10,10,10,.07); }
 
-  .pricing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 420px)); gap: var(--sp-lg); justify-content: center; margin-top: var(--sp-xl); }
-  .price-card { border-radius: var(--r-lg); padding: var(--sp-xl); }
-  .price-card .amount { font-size: 56px; font-weight: 500; letter-spacing: -2px; line-height: 1; }
-  .price-card ul { list-style: none; margin-top: var(--sp-lg); display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
-  .price-card ul li::before { content: "✓  "; font-weight: 600; }
-  .pc-standard { background: var(--canvas); border: 1px solid var(--hairline); color: var(--body); }
-  .pc-featured { background: var(--brand-teal); color: #fff; }
-  .pc-featured .title-lg, .pc-featured .amount { color: #fff; }
-
   .cta-band { background: var(--surface-soft); border-radius: var(--r-xl); padding: 80px; text-align: center; position: relative; overflow: hidden; }
   .cta-band .display-md { max-width: 640px; margin: 0 auto var(--sp-lg); }
 
@@ -56,7 +47,7 @@
   @media (max-width: 768px) {
     .hero-grid, .mockup-band { grid-template-columns: 1fr; }
     .mockup-band { padding: var(--sp-lg); }
-    .features-grid, .pricing-grid { grid-template-columns: 1fr; }
+    .features-grid { grid-template-columns: 1fr; }
     .cta-band { padding: 48px var(--sp-lg); }
     .hero-band { padding: 48px 0 40px; }
   }
@@ -73,7 +64,6 @@
     <div class="nav-links">
       <a href="app.html">Terminal</a>
       <a href="company.html?t=AAPL">Sample report</a>
-      <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </div>
     <div class="nav-right">
@@ -84,7 +74,6 @@
   <div class="mobile-menu">
     <a href="app.html">Terminal</a>
     <a href="company.html?t=AAPL">Sample report</a>
-    <a href="#pricing">Pricing</a>
     <a href="#faq">FAQ</a>
   </div>
 </nav>
@@ -255,44 +244,6 @@
   </div>
 </section>
 
-<!-- PRICING -->
-<section class="section" id="pricing" style="padding-top:0">
-  <div class="container" style="text-align:center">
-    <p class="caption-upper">Pricing</p>
-    <h2 class="display-md" style="margin-top:12px">Curated data, not credit card bait.</h2>
-    <p style="max-width:520px;margin:16px auto 0">Other terminals charge $19 a month for this. Plainsight is built on public data and open code, so the price is what public data should cost.</p>
-    <div class="pricing-grid">
-      <div class="price-card pc-standard" style="text-align:left">
-        <p class="title-lg">Monthly</p>
-        <p class="amount" style="color:var(--ink);margin-top:16px">$0<span style="font-size:16px;letter-spacing:0;color:var(--muted)"> / month</span></p>
-        <p class="body-sm" style="margin-top:12px;color:var(--muted)">Billed never. Cancel anytime by simply closing the tab.</p>
-        <ul>
-          <li>Unlimited company reports</li>
-          <li>Real-time valuation metrics</li>
-          <li>10-year financial history</li>
-          <li>Predictive search</li>
-          <li>Ad-free, login-free</li>
-        </ul>
-        <a class="btn btn-secondary" style="margin-top:24px" href="app.html">Get started</a>
-      </div>
-      <div class="price-card pc-featured" style="text-align:left">
-        <p class="badge-pill" style="background:rgba(255,250,240,.15);color:#fff">MOST POPULAR</p>
-        <p class="title-lg" style="margin-top:12px">Annually</p>
-        <p class="amount" style="margin-top:16px">$0<span style="font-size:16px;letter-spacing:0;opacity:.7"> / year</span></p>
-        <p class="body-sm" style="margin-top:12px;opacity:.8">Save 100% compared to what you'd pay elsewhere. The smart choice for long-term research.</p>
-        <ul>
-          <li>Everything in Monthly</li>
-          <li>Live refresh every 30 minutes</li>
-          <li>Data straight from SEC filings</li>
-          <li>Open-source pipeline on GitHub</li>
-          <li>Works on your phone</li>
-        </ul>
-        <a class="btn btn-on-color" style="margin-top:24px" href="app.html">Get started</a>
-      </div>
-    </div>
-  </div>
-</section>
-
 <!-- FAQ -->
 <section class="section" id="faq" style="padding-top:0">
   <div class="container" style="max-width:860px">
@@ -355,7 +306,6 @@
       <h4>Product</h4>
       <a href="app.html">Terminal</a>
       <a href="company.html?t=AAPL">Sample report</a>
-      <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </div>
     <div>

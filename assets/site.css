@@ -88,6 +88,7 @@ a { color: var(--ink); }
 .nav-links a:hover { color: var(--ink); }
 .nav-right { display: flex; align-items: center; gap: var(--sp-sm); margin-left: auto; }
 .nav-burger { display: none; }
+.mobile-menu { display: none; }
 
 /* ---- buttons ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;

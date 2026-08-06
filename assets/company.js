@@ -121,13 +121,13 @@
   const yl = years.map((r) => PS.fyLabel(r.end));
 
   if (years.length >= 2) {
-    PSCharts.barChart(card('Revenue', 'total annual revenue'), {
+    PSCharts.barChart(card('Revenue', 'total annual revenue · % is growth vs. prior year'), {
       labels: yl, series: [{ name: 'Revenue', color: 'var(--chart-1)', values: years.map((r) => r.v) }],
-      fmt: PS.fmtMoney, negativeColor: 'var(--down)',
+      fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
     });
-    PSCharts.barChart(card('Net income', 'profit after all expenses and tax'), {
+    PSCharts.barChart(card('Net income', 'profit after all expenses and tax · % vs. prior year'), {
       labels: yl, series: [{ name: 'Net income', color: 'var(--chart-2)', values: align(A.netIncome, years) }],
-      fmt: PS.fmtMoney, negativeColor: 'var(--down)',
+      fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
     });
     // margins
     const gm = years.map((r, i) => { const g = align(A.grossProfit, years)[i]; return g != null && r.v ? (g / r.v) * 100 : null; });
@@ -143,10 +143,10 @@
       fmt: (v) => PS.fmtPct(v), fillGaps: true,
     });
     if (!unreliable && A.eps.length >= 2) {
-      PSCharts.barChart(card('EPS (diluted)', 'earnings per share'), {
+      PSCharts.barChart(card('EPS (diluted)', 'earnings per share · % vs. prior year'), {
         labels: A.eps.slice(-10).map((r) => PS.fyLabel(r.end)),
         series: [{ name: 'EPS', color: 'var(--chart-4)', values: A.eps.slice(-10).map((r) => r.v) }],
-        fmt: (v) => '$' + (v == null ? '—' : v.toFixed(2)), negativeColor: 'var(--down)',
+        fmt: (v) => '$' + (v == null ? '—' : v.toFixed(2)), negativeColor: 'var(--down)', growthLag: 1,
       });
     }
     // cash flow
@@ -212,17 +212,17 @@
   };
   const qr = (Q.revenue || []).slice(-12);
   if (qr.length >= 4) {
-    PSCharts.barChart(qcard('Quarterly revenue'), {
+    PSCharts.barChart(qcard('Quarterly revenue', '% is growth vs. the same quarter a year ago'), {
       labels: qr.map((r) => PS.qLabel(r.end)),
       series: [{ name: 'Revenue', color: 'var(--chart-1)', values: qr.map((r) => r.v) }],
-      fmt: PS.fmtMoney, flags: qr.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)',
+      fmt: PS.fmtMoney, flags: qr.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)', growthLag: 4,
     });
     const qn = (Q.netIncome || []).slice(-12);
     if (qn.length >= 4) {
-      PSCharts.barChart(qcard('Quarterly net income'), {
+      PSCharts.barChart(qcard('Quarterly net income', '% vs. the same quarter a year ago'), {
         labels: qn.map((r) => PS.qLabel(r.end)),
         series: [{ name: 'Net income', color: 'var(--chart-2)', values: qn.map((r) => r.v) }],
-        fmt: PS.fmtMoney, flags: qn.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)',
+        fmt: PS.fmtMoney, flags: qn.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)', growthLag: 4,
       });
     }
   } else {

@@ -55,13 +55,18 @@
     box.appendChild(lg);
   }
 
-  function dataTable(box, labels, series, fmt) {
+  function dataTable(box, labels, series, fmt, growth) {
     const d = document.createElement('details');
     d.className = 'data-table';
+    const gCell = (i) => {
+      if (!growth) return '';
+      const g = growth[i];
+      return `<td class="num" style="color:${g == null ? 'var(--muted)' : g >= 0 ? 'var(--up)' : 'var(--down)'}">${g == null ? '—' : fmtGrowth(g)}</td>`;
+    };
     const rows = labels.map((lab, i) =>
-      `<tr><td>${lab}</td>${series.map((s) => `<td class="num">${s.values[i] == null ? '—' : fmt(s.values[i])}</td>`).join('')}</tr>`).join('');
+      `<tr><td>${lab}</td>${series.map((s) => `<td class="num">${s.values[i] == null ? '—' : fmt(s.values[i])}</td>`).join('')}${gCell(i)}</tr>`).join('');
     d.innerHTML = `<summary>View as table</summary><table class="data"><thead><tr><th></th>${series
-      .map((s) => `<th class="num">${s.name}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+      .map((s) => `<th class="num">${s.name}</th>`).join('')}${growth ? '<th class="num">YoY</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
     box.appendChild(d);
   }
 
@@ -144,11 +149,30 @@
     if (opts.table !== false) dataTable(box, labels, series, opts.fmt);
   }
 
+  // Growth vs `lag` periods back (lag 1 = prior year, lag 4 = same quarter last year).
+  // Null when the base is missing, zero, or negative (a % from a negative base is meaningless).
+  function growthSeries(values, lag) {
+    return values.map((v, i) => {
+      const base = i >= lag ? values[i - lag] : null;
+      if (v == null || base == null || base <= 0) return null;
+      return ((v - base) / base) * 100;
+    });
+  }
+  const fmtGrowth = (g) => {
+    if (g == null) return null;
+    if (Math.abs(g) > 999) return (g > 0 ? '+' : '−') + '999%+';
+    const n = Math.abs(g) >= 10 ? Math.abs(g).toFixed(0) : Math.abs(g).toFixed(1);
+    return (g >= 0 ? '+' : '−') + n + '%';
+  };
+
   // ---------- bar chart (grouped or stacked; supports negatives) ----------
-  // opts: {labels, series:[{name,color,values}], stacked, fmt, height}
+  // opts: {labels, series:[{name,color,values}], stacked, fmt, height,
+  //        growthLag: show YoY % labels + tooltip rows (single-series only)}
   function barChart(box, opts) {
     box.innerHTML = '';
-    const W = 640, H = opts.height || 260, padL = 46, padR = 12, padT = 12, padB = 24;
+    const growth = opts.growthLag && opts.series.length === 1
+      ? growthSeries(opts.series[0].values, opts.growthLag) : null;
+    const W = 640, H = opts.height || 260, padL = 46, padR = 12, padT = growth ? 26 : 12, padB = 24;
     const labels = opts.labels;
     const series = opts.series.filter((s) => s.values.some((v) => v != null));
     if (!series.length || !labels.length) { box.innerHTML = '<p class="body-sm" style="color:var(--muted)">Not enough data.</p>'; return; }
@@ -213,15 +237,25 @@
         const color = (opts.negativeColor && v < 0 && series.length === 1) ? opts.negativeColor : s.color;
         const p = el('path', { d: barPath(x, v, y0, y1, opts.stacked ? groupW : barW), fill: color });
         if (opts.stacked) p.setAttribute('stroke', 'var(--canvas)'), p.setAttribute('stroke-width', 1);
+        const g = growth ? growth[i] : null;
         p.addEventListener('pointerenter', (ev) => {
           p.setAttribute('opacity', '0.85');
           const rect = svg.getBoundingClientRect();
           tip.innerHTML = `<div class="tl">${labels[i]}${opts.flags?.[i] ? ' <span style="color:var(--muted);font-weight:400">' + opts.flags[i] + '</span>' : ''}</div>` +
-            tipRow(color, series.length > 1 ? s.name : '', opts.fmt(v));
+            tipRow(color, series.length > 1 ? s.name : '', opts.fmt(v)) +
+            (g != null ? `<div class="row"><span class="sw" style="background:${g >= 0 ? 'var(--up)' : 'var(--down)'}"></span><span>${opts.growthLag === 4 ? 'vs. yr ago' : 'YoY'}: <strong style="color:${g >= 0 ? 'var(--up)' : 'var(--down)'}">${fmtGrowth(g)}</strong></span></div>` : '');
           placeTip(tip, box, ((x + barW / 2) / W) * rect.width, (Math.min(y0, y1) / H) * rect.height);
         });
         p.addEventListener('pointerleave', () => { p.removeAttribute('opacity'); tip.style.display = 'none'; });
         svg.appendChild(p);
+        // growth label riding the bar's outward end
+        if (g != null && labels.length <= 14) {
+          const ly = v >= 0 ? Math.min(y0, y1) - 6 : Math.max(y0, y1) + 13;
+          const txt = el('text', { x: x + barW / 2, y: ly, 'text-anchor': 'middle', 'font-size': 10.5, 'font-weight': 600,
+            fill: g >= 0 ? 'var(--up)' : 'var(--down)' });
+          txt.textContent = fmtGrowth(g);
+          svg.appendChild(txt);
+        }
       });
     }
 
@@ -236,7 +270,7 @@
 
     box.appendChild(svg);
     legend(box, series);
-    if (opts.table !== false) dataTable(box, labels, series, opts.fmt);
+    if (opts.table !== false) dataTable(box, labels, series, opts.fmt, growth);
   }
 
   window.PSCharts = { lineChart, barChart };

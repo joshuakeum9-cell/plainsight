@@ -21,11 +21,11 @@
 
     // ---- formatters ----
     fmtPrice(v) {
-      if (v == null) return '—';
+      if (v == null) return '-';
       return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     },
     fmtMoney(v, compactTick) {
-      if (v == null || !isFinite(v)) return '—';
+      if (v == null || !isFinite(v)) return '-';
       const a = Math.abs(v);
       const sign = v < 0 ? '-' : '';
       const f = (x, d) => x.toFixed(d).replace(/\.0+$/, '').replace(/(\.\d*?)0+$/, '$1');
@@ -36,7 +36,7 @@
       return `${sign}$${f(a, 2)}`;
     },
     fmtNum(v, compactTick) {
-      if (v == null || !isFinite(v)) return '—';
+      if (v == null || !isFinite(v)) return '-';
       const a = Math.abs(v), sign = v < 0 ? '-' : '';
       const f = (x, d) => x.toFixed(d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
       if (a >= 1e12) return `${sign}${f(a / 1e12, 2)}T`;
@@ -45,10 +45,10 @@
       if (a >= 1e3) return `${sign}${f(a / 1e3, 1)}K`;
       return `${sign}${f(a, 2)}`;
     },
-    fmtPct(v) { return v == null || !isFinite(v) ? '—' : `${v.toFixed(1)}%`; },
-    fmtEps(v) { return v == null || !isFinite(v) ? '—' : `$${v.toFixed(2)}`; },
+    fmtPct(v) { return v == null || !isFinite(v) ? '-' : `${v.toFixed(1)}%`; },
+    fmtEps(v) { return v == null || !isFinite(v) ? '-' : `$${v.toFixed(2)}`; },
     changeChip(c, cp) {
-      if (c == null || cp == null) return '<span class="badge-pill chip-flat">—</span>';
+      if (c == null || cp == null) return '<span class="badge-pill chip-flat">-</span>';
       const cls = c > 0 ? 'chip-up' : c < 0 ? 'chip-down' : 'chip-flat';
       const arrow = c > 0 ? '▲' : c < 0 ? '▼' : '·';
       return `<span class="badge-pill ${cls}">${arrow} ${Math.abs(c).toFixed(2)} (${Math.abs(cp).toFixed(2)}%)</span>`;

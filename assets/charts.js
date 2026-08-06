@@ -1,4 +1,4 @@
-/* Plainsight chart library — hand-rolled SVG, no dependencies.
+/* Plainsight chart library - hand-rolled SVG, no dependencies.
    Specs: 2px lines, thin bars with 4px rounded outward ends anchored to the
    baseline, 2px canvas gaps between adjacent fills, recessive hairline grid,
    crosshair+tooltip on lines, per-mark tooltip on bars, legends for >=2 series,
@@ -61,10 +61,10 @@
     const gCell = (i) => {
       if (!growth) return '';
       const g = growth[i];
-      return `<td class="num" style="color:${g == null ? 'var(--muted)' : g >= 0 ? 'var(--up)' : 'var(--down)'}">${g == null ? '—' : fmtGrowth(g)}</td>`;
+      return `<td class="num" style="color:${g == null ? 'var(--muted)' : g >= 0 ? 'var(--up)' : 'var(--down)'}">${g == null ? '-' : fmtGrowth(g)}</td>`;
     };
     const rows = labels.map((lab, i) =>
-      `<tr><td>${lab}</td>${series.map((s) => `<td class="num">${s.values[i] == null ? '—' : fmt(s.values[i])}</td>`).join('')}${gCell(i)}</tr>`).join('');
+      `<tr><td>${lab}</td>${series.map((s) => `<td class="num">${s.values[i] == null ? '-' : fmt(s.values[i])}</td>`).join('')}${gCell(i)}</tr>`).join('');
     d.innerHTML = `<summary>View as table</summary><table class="data"><thead><tr><th></th>${series
       .map((s) => `<th class="num">${s.name}</th>`).join('')}${growth ? '<th class="num">YoY</th>' : ''}</tr></thead><tbody>${rows}</tbody></table>`;
     box.appendChild(d);

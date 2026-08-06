@@ -73,12 +73,12 @@
     });
     tbody.innerHTML = list.map((r) => {
       const col = r.cp > 0 ? 'var(--up)' : r.cp < 0 ? 'var(--down)' : 'var(--muted)';
-      const range = r.pos52 == null ? '—'
+      const range = r.pos52 == null ? '-'
         : `<span style="display:inline-flex;align-items:center;gap:6px"><span style="display:inline-block;width:64px;height:4px;border-radius:2px;background:var(--surface-strong);position:relative"><span style="position:absolute;left:calc(${r.pos52.toFixed(0)}% - 3px);top:-2px;width:8px;height:8px;border-radius:50%;background:var(--chart-1)"></span></span>${r.pos52.toFixed(0)}%</span>`;
       return `<tr onclick="location.href='company.html?t=${encodeURIComponent(r.t)}'" style="cursor:pointer">
         <td><span class="sym-chip">${r.t}</span></td><td>${r.n}</td><td style="color:var(--muted)">${r.s}</td>
-        <td class="num">${r.p == null ? '—' : '$' + PS.fmtPrice(r.p)}</td>
-        <td class="num" style="color:${col};font-weight:600">${r.cp == null ? '—' : (r.cp > 0 ? '+' : '') + r.cp.toFixed(2) + '%'}</td>
+        <td class="num">${r.p == null ? '-' : '$' + PS.fmtPrice(r.p)}</td>
+        <td class="num" style="color:${col};font-weight:600">${r.cp == null ? '-' : (r.cp > 0 ? '+' : '') + r.cp.toFixed(2) + '%'}</td>
         <td class="num">${range}</td></tr>`;
     }).join('');
   }

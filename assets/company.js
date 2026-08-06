@@ -7,7 +7,7 @@
   const t = (params.get('t') || 'AAPL').toUpperCase();
 
   // Multi-class share structures where per-class SEC share counts don't sum to
-  // an economically meaningful total — per-share/cap metrics are suppressed.
+  // an economically meaningful total - per-share/cap metrics are suppressed.
   const MULTI_CLASS_UNRELIABLE = new Set(['BRK.B']);
 
   let f, h, q;
@@ -22,7 +22,7 @@
 
   const quote = q.quotes[PS.qKey(t)] || {};
   const price = quote.p ?? h.daily.c.at(-1);
-  document.title = `${t} · ${h.name} — Plainsight`;
+  document.title = `${t} · ${h.name} · Plainsight`;
 
   // ---- header ----
   document.getElementById('rSym').textContent = t;
@@ -34,7 +34,7 @@
   if (h.exchange) badges.push(h.exchange);
   if (f.profile?.city) badges.push(`${f.profile.city.replace(/\w\S*/g, (w) => w[0] + w.slice(1).toLowerCase())}, ${f.profile.state || ''}`);
   document.getElementById('rBadges').innerHTML = badges.map((b) => `<span class="badge-pill">${b}</span>`).join('');
-  document.getElementById('rPrice').textContent = price != null ? `$${PS.fmtPrice(price)}` : '—';
+  document.getElementById('rPrice').textContent = price != null ? `$${PS.fmtPrice(price)}` : '-';
   document.getElementById('rChange').innerHTML = PS.changeChip(quote.c, quote.cp);
   document.getElementById('rStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
   if (quote.h52 != null && quote.l52 != null && quote.h52 > quote.l52 && price != null) {
@@ -86,18 +86,18 @@
   const pb = gate(cap != null && s.equity > 0 ? cap / s.equity : null, 0, 150);
   const fcfY = gate(cap != null && s.fcfTTM != null ? (s.fcfTTM / cap) * 100 : null, -60, 60);
   const divY = gate(s.divPS != null && price ? (s.divPS / price) * 100 : null, 0, 25);
-  const x = (v) => (v == null ? '—' : v.toFixed(1) + '×');
+  const x = (v) => (v == null ? '-' : v.toFixed(1) + '×');
   const tiles = [
     ['Market cap', cap != null ? PS.fmtMoney(cap) : 'n/a', unreliable && MULTI_CLASS_UNRELIABLE.has(t) ? 'multi-class' : ''],
     ['P/E (TTM)', x(pe), pe == null ? 'not meaningful' : ''],
     ['P/S (TTM)', x(ps), ''],
     ['P/B', x(pb), ''],
-    ['EPS (TTM)', s.epsTTM != null && !unreliable ? PS.fmtEps(s.epsTTM) : '—', 'diluted'],
+    ['EPS (TTM)', s.epsTTM != null && !unreliable ? PS.fmtEps(s.epsTTM) : '-', 'diluted'],
     ['Revenue (TTM)', PS.fmtMoney(s.revTTM), ''],
     ['Net margin', PS.fmtPct(s.netMarginTTM), 'TTM'],
     ['ROE', PS.fmtPct(s.roeTTM), 'TTM'],
-    ['FCF yield', fcfY != null ? fcfY.toFixed(1) + '%' : '—', 'TTM'],
-    ['Dividend yield', divY != null ? divY.toFixed(2) + '%' : '—', s.divPS ? `$${s.divPS.toFixed(2)}/sh` : 'no dividend'],
+    ['FCF yield', fcfY != null ? fcfY.toFixed(1) + '%' : '-', 'TTM'],
+    ['Dividend yield', divY != null ? divY.toFixed(2) + '%' : '-', s.divPS ? `$${s.divPS.toFixed(2)}/sh` : 'no dividend'],
     ['Cash', PS.fmtMoney(s.cash), 'latest quarter'],
     ['LT debt', PS.fmtMoney(s.ltDebt), 'latest quarter'],
   ];
@@ -146,7 +146,7 @@
       PSCharts.barChart(card('EPS (diluted)', 'earnings per share · % vs. prior year'), {
         labels: A.eps.slice(-10).map((r) => PS.fyLabel(r.end)),
         series: [{ name: 'EPS', color: 'var(--chart-4)', values: A.eps.slice(-10).map((r) => r.v) }],
-        fmt: (v) => '$' + (v == null ? '—' : v.toFixed(2)), negativeColor: 'var(--down)', growthLag: 1,
+        fmt: (v) => '$' + (v == null ? '-' : v.toFixed(2)), negativeColor: 'var(--down)', growthLag: 1,
       });
     }
     // cash flow
@@ -178,7 +178,7 @@
     }
     // shares outstanding
     if (f.dilutedShares?.length >= 3) {
-      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average — falling means buybacks are shrinking the float'), {
+      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average; falling means buybacks are shrinking the float'), {
         labels: f.dilutedShares.slice(-10).map((r) => PS.fyLabel(r.end)),
         series: [{ name: 'Shares', color: 'var(--chart-1)', values: f.dilutedShares.slice(-10).map((r) => r.v) }],
         fmt: (v, tick) => PS.fmtNum(v, tick),

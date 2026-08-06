@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal — Plainsight</title>
+<meta name="description" content="Live S&P 500 market overview: indices, movers, sector performance, and a full screener.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css?v=2">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a3a3a'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='%23fffaf0'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%231a3a3a'/%3E%3C/svg%3E">
+<style>
+  .terminal-hero { padding: 56px 0 40px; }
+  .terminal-hero .search-wrap { max-width: 620px; margin-top: var(--sp-lg); }
+  .terminal-hero .text-input { height: 54px; font-size: 17px; border-radius: var(--r-md); }
+  .indices-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-sm); margin-top: var(--sp-xl); }
+  .movers-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-lg); }
+  .movers-grid > .card, .indices-grid > .stat-tile { min-width: 0; }
+  .mover-row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--hairline-soft); text-decoration: none; }
+  .mover-row:last-child { border-bottom: none; }
+  .mover-row .nm { color: var(--body); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+  .mover-row .px { margin-left: auto; font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .sector-row { display: grid; grid-template-columns: 200px 1fr 70px; align-items: center; gap: 12px; padding: 7px 0; font-size: 14px; }
+  .sector-row .bar-track { position: relative; height: 14px; }
+  .sector-row .bar-track .zero { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--hairline); }
+  .sector-row .bar { position: absolute; top: 0; bottom: 0; border-radius: 4px; }
+  .sector-row .pct { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .screener-tools { display: flex; gap: var(--sp-sm); align-items: center; flex-wrap: wrap; margin: var(--sp-lg) 0 var(--sp-md); }
+  .screener-tools .text-input { max-width: 260px; }
+  .tab-scroll { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; }
+  .table-wrap { overflow-x: auto; }
+  @media (max-width: 1024px) { .indices-grid { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 768px) {
+    .indices-grid { grid-template-columns: repeat(2, 1fr); }
+    .movers-grid { grid-template-columns: 1fr; }
+    .sector-row { grid-template-columns: 110px 1fr 64px; }
+    .stat-tile { padding: 12px 14px; }
+    .stat-tile .val { font-size: 18px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="container">
+    <a class="nav-logo" href="index.html" aria-label="Plainsight home">
+      <svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#1a3a3a"/><circle cx="16" cy="16" r="8.5" fill="#fffaf0"/><circle cx="16" cy="16" r="3.5" fill="#1a3a3a"/></svg>
+      Plainsight
+    </a>
+    <div class="nav-links">
+      <a href="app.html" style="color:var(--ink)">Terminal</a>
+      <a href="company.html?t=AAPL">Sample report</a>
+      <a href="index.html#pricing">Pricing</a>
+      <a href="index.html#faq">FAQ</a>
+    </div>
+    <div class="nav-right">
+      <span class="updated-stamp"><span class="live-dot"></span><span id="stamp">loading…</span></span>
+    </div>
+    <button class="nav-burger" aria-label="Menu">☰</button>
+  </div>
+  <div class="mobile-menu">
+    <a href="app.html">Terminal</a>
+    <a href="company.html?t=AAPL">Sample report</a>
+    <a href="index.html#pricing">Pricing</a>
+    <a href="index.html#faq">FAQ</a>
+  </div>
+</nav>
+
+<header class="terminal-hero">
+  <div class="container">
+    <h1 class="display-md">The terminal</h1>
+    <p class="body-md" style="color:var(--muted);margin-top:8px">Search any S&P 500 company, or scan the whole market below.</p>
+    <div class="search-wrap">
+      <input id="search" class="text-input" type="text" placeholder="Search by ticker or company name — try “NVDA” or “Costco”" autocomplete="off" spellcheck="false" autofocus>
+      <div id="searchResults" class="search-results"></div>
+    </div>
+    <div class="indices-grid" id="indices"></div>
+  </div>
+</header>
+
+<main class="container" style="display:flex;flex-direction:column;gap:48px;padding-bottom:32px">
+
+  <section>
+    <div class="movers-grid">
+      <div class="card">
+        <h2 class="title-md" style="margin-bottom:8px">Top gainers</h2>
+        <div id="gainers"></div>
+      </div>
+      <div class="card">
+        <h2 class="title-md" style="margin-bottom:8px">Top decliners</h2>
+        <div id="losers"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="title-md">Sector performance</h2>
+    <p class="caption" style="color:var(--muted);margin:2px 0 12px">Average daily move of S&P 500 constituents by GICS sector</p>
+    <div id="sectors"></div>
+  </section>
+
+  <section id="screener">
+    <h2 class="title-lg">All 503 companies</h2>
+    <div class="screener-tools">
+      <input id="filter" class="text-input" type="text" placeholder="Filter list…" autocomplete="off">
+      <div class="tab-scroll" id="sectorTabs"></div>
+    </div>
+    <div class="table-wrap card" style="padding:0 var(--sp-md)">
+      <table class="data" id="screenTable">
+        <thead>
+          <tr>
+            <th data-k="t">Symbol</th><th data-k="n">Company</th><th data-k="s">Sector</th>
+            <th class="num" data-k="p">Price</th><th class="num" data-k="cp">Change</th><th class="num" data-k="pos52">52-wk range</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer" style="margin-top:48px">
+  <div class="container">
+    <p class="caption" style="color:var(--muted);padding-bottom:24px">©2026 Plainsight · Data from Yahoo Finance &amp; SEC EDGAR · Not investment advice</p>
+  </div>
+  <svg class="footer-mountains" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 120 L0 80 Q180 30 360 78 Q470 50 560 82 Q700 20 860 80 Q980 48 1100 84 Q1260 40 1440 86 L1440 120 Z" fill="#ebe6d6"/>
+    <path d="M0 120 L0 100 Q220 60 420 100 Q560 78 700 102 Q860 66 1020 100 Q1200 76 1440 104 L1440 120 Z" fill="#a4d4c5"/>
+    <path d="M0 120 L0 112 Q300 92 600 112 Q900 94 1200 112 Q1320 104 1440 112 L1440 120 Z" fill="#1a3a3a"/>
+  </svg>
+</footer>
+
+<script src="assets/data.js?v=1"></script>
+<script src="assets/app.js?v=1"></script>
+</body>
+</html>

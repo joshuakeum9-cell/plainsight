@@ -1,0 +1,43 @@
+name: Nightly data refresh
+
+on:
+  schedule:
+    # 05:20 UTC ≈ after US market close + EDGAR nightly processing.
+    - cron: "20 5 * * 2-6"
+  workflow_dispatch:
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Refresh universe (S&P 500 constituents)
+        run: node scripts/build-universe.mjs
+      - name: Refresh price history
+        run: node scripts/refresh-history.mjs
+      - name: Refresh fundamentals from EDGAR
+        run: node scripts/refresh-fundamentals.mjs
+      - name: Refresh quotes
+        run: node scripts/refresh-quotes.mjs
+      - name: Commit & push
+        run: |
+          git config user.name "plainsight-bot"
+          git config user.email "actions@github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "No data changes."
+          else
+            git commit -m "data: nightly refresh (universe, history, fundamentals, quotes)"
+            git pull --rebase origin main
+            git push
+          fi

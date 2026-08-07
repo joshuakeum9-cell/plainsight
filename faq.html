@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ · Plainsight</title>
+<meta name="description" content="Frequently asked questions about Plainsight: data sources, refresh cadence, coverage, and why it's free.">
+<style>html{background:#fffaf0}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=optional" rel="stylesheet">
+<link rel="stylesheet" href="assets/site.css?v=3">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a3a3a'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='%23fffaf0'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%231a3a3a'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="container">
+    <a class="nav-logo" href="index.html" aria-label="Plainsight home">
+      <svg width="28" height="28" viewBox="0 0 32 32"><rect width="32" height="32" rx="9" fill="#1a3a3a"/><circle cx="16" cy="16" r="8.5" fill="#fffaf0"/><circle cx="16" cy="16" r="3.5" fill="#1a3a3a"/></svg>
+      Plainsight
+    </a>
+    <div class="nav-links">
+      <a href="app.html">Terminal</a>
+      <a href="company.html?t=AAPL">Sample report</a>
+      <a href="faq.html" style="color:var(--ink)">FAQ</a>
+    </div>
+    <div class="nav-right">
+      <span class="updated-stamp"><span class="live-dot"></span><span id="navStamp">live data</span></span>
+    </div>
+    <button class="nav-burger" aria-label="Menu">☰</button>
+  </div>
+  <div class="mobile-menu">
+    <a href="app.html">Terminal</a>
+    <a href="company.html?t=AAPL">Sample report</a>
+    <a href="faq.html">FAQ</a>
+  </div>
+</nav>
+
+<main class="section" style="padding-top:56px">
+  <div class="container" style="max-width:860px">
+    <p class="caption-upper">FAQ</p>
+    <h1 class="display-md" style="margin-top:12px;margin-bottom:24px">Frequently asked questions</h1>
+    <div class="faq">
+      <details>
+        <summary>Where does the data come from?</summary>
+        <p class="ans">Two places. Prices and quotes come from Yahoo Finance's public market data. Fundamentals (revenue, income, cash flow, balance sheet) come from SEC EDGAR, the U.S. government database where every public company legally files its audited financials. Nothing is estimated or hand-entered.</p>
+      </details>
+      <details>
+        <summary>How live is "live"?</summary>
+        <p class="ans">Quotes refresh automatically every 30 minutes during market hours via an open GitHub Actions pipeline. Price history and fundamentals refresh nightly. Every page shows its "last updated" stamp, so you always know exactly how fresh the numbers are.</p>
+      </details>
+      <details>
+        <summary>Which companies are covered?</summary>
+        <p class="ans">All 503 constituents of the S&P 500, plus the major indices (S&P 500, Dow, Nasdaq, Russell 2000, VIX). That covers roughly 80% of total U.S. market capitalization.</p>
+      </details>
+      <details>
+        <summary>Why is it free? What's the catch?</summary>
+        <p class="ans">There isn't one. Plainsight runs entirely on public data and free infrastructure; the pipeline and site are open source. No account, no email capture, no ads. It exists because clean fundamental data shouldn't cost $19 a month.</p>
+      </details>
+      <details>
+        <summary>Is Plainsight suitable for beginners?</summary>
+        <p class="ans">Yes. Every report uses the same clean layout, avoids jargon where possible, and shows the metric's plain meaning. If you're experienced, the speed and density are the point; if you're new, the curation is.</p>
+      </details>
+      <details>
+        <summary>Can I use it for trading decisions?</summary>
+        <p class="ans">Plainsight is an informational and analytical tool, not investment advice. Data can be delayed or contain source errors. Always do your own research before making financial decisions.</p>
+      </details>
+      <details>
+        <summary>Will it keep evolving?</summary>
+        <p class="ans">Yes. It's an open project. Coverage beyond the S&P 500, revenue segments, and more computed metrics are all natural next steps. The repo is public if you want to follow along or contribute.</p>
+      </details>
+    </div>
+    <div style="margin-top:48px;display:flex;gap:12px;flex-wrap:wrap">
+      <a class="btn btn-primary" href="app.html">Open the terminal</a>
+      <a class="btn btn-secondary" href="company.html?t=AAPL">See a sample report</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site-footer" style="margin-top:0">
+  <div class="container">
+    <p class="caption" style="color:var(--muted);padding-bottom:24px">©2026 Plainsight · Data from Yahoo Finance &amp; SEC EDGAR · Not investment advice</p>
+  </div>
+  <svg class="footer-mountains" viewBox="0 0 1440 120" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0 120 L0 80 Q180 30 360 78 Q470 50 560 82 Q700 20 860 80 Q980 48 1100 84 Q1260 40 1440 86 L1440 120 Z" fill="#ebe6d6"/>
+    <path d="M0 120 L0 100 Q220 60 420 100 Q560 78 700 102 Q860 66 1020 100 Q1200 76 1440 104 L1440 120 Z" fill="#a4d4c5"/>
+    <path d="M0 120 L0 112 Q300 92 600 112 Q900 94 1200 112 Q1320 104 1440 112 L1440 120 Z" fill="#1a3a3a"/>
+  </svg>
+</footer>
+
+<script src="assets/data.js?v=2"></script>
+<script>
+  PS.burger();
+  PS.quotes().then((q) => {
+    document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
+  }).catch(() => {});
+</script>
+</body>
+</html>

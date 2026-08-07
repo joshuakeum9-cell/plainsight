@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Terminal · Plainsight</title>
 <meta name="description" content="Live S&P 500 market overview: indices, movers, sector performance, and a full screener.">
+<style>html{background:#fffaf0}</style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=optional" rel="stylesheet">
 <link rel="stylesheet" href="assets/site.css?v=3">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a3a3a'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='%23fffaf0'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%231a3a3a'/%3E%3C/svg%3E">
 <style>
@@ -51,7 +52,7 @@
     <div class="nav-links">
       <a href="app.html" style="color:var(--ink)">Terminal</a>
       <a href="company.html?t=AAPL">Sample report</a>
-      <a href="index.html#faq">FAQ</a>
+      <a href="faq.html">FAQ</a>
     </div>
     <div class="nav-right">
       <span class="updated-stamp"><span class="live-dot"></span><span id="stamp">loading…</span></span>
@@ -61,7 +62,7 @@
   <div class="mobile-menu">
     <a href="app.html">Terminal</a>
     <a href="company.html?t=AAPL">Sample report</a>
-    <a href="index.html#faq">FAQ</a>
+    <a href="faq.html">FAQ</a>
   </div>
 </nav>
 
@@ -70,7 +71,7 @@
     <h1 class="display-md">The terminal</h1>
     <p class="body-md" style="color:var(--muted);margin-top:8px">Search any S&P 500 company, or scan the whole market below.</p>
     <div class="search-wrap">
-      <input id="search" class="text-input" type="text" placeholder="Search by ticker or company name. Try “NVDA” or “Costco”" autocomplete="off" spellcheck="false" autofocus>
+      <input id="search" class="text-input" type="text" placeholder="Search by ticker or company name. Try “NVDA” or “Costco”" autocomplete="off" spellcheck="false">
       <div id="searchResults" class="search-results"></div>
     </div>
     <div class="indices-grid" id="indices"></div>

@@ -45,8 +45,9 @@
   }
 
   // ---- price chart with range tabs ----
-  const fmtD = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const fmtM = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  const yy = (d) => " '" + String(d.getFullYear()).slice(2);
+  const fmtD = (ts) => { const d = new Date(ts * 1000); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + yy(d); };
+  const fmtM = (ts) => { const d = new Date(ts * 1000); return d.toLocaleDateString('en-US', { month: 'short' }) + yy(d); };
   function renderPrice(range) {
     let src, labels, values;
     const days = { '1M': 22, '3M': 64, '6M': 128, '1Y': Infinity }[range];

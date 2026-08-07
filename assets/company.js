@@ -35,7 +35,7 @@
   document.getElementById('rBadges').innerHTML = badges.map((b) => `<span class="badge-pill">${b}</span>`).join('');
   document.getElementById('rPrice').textContent = price != null ? `$${PS.fmtPrice(price)}` : '-';
   document.getElementById('rChange').innerHTML = PS.changeChip(quote.c, quote.cp);
-  document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
+  document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}${PS.marketNote()}`;
   if (quote.h52 != null && quote.l52 != null && quote.h52 > quote.l52 && price != null) {
     const pos = ((price - quote.l52) / (quote.h52 - quote.l52)) * 100;
     document.querySelector('#r52track .fill').style.left = `calc(${Math.max(0, Math.min(100, pos)).toFixed(1)}% - 6px)`;
@@ -47,7 +47,34 @@
   const yy = (d) => " '" + String(d.getFullYear()).slice(2);
   const fmtD = (ts) => { const d = new Date(ts * 1000); return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + yy(d); };
   const fmtM = (ts) => { const d = new Date(ts * 1000); return d.toLocaleDateString('en-US', { month: 'short' }) + yy(d); };
+  // Intraday (1D/5D) lives on the force-pushed data-intraday branch, fetched
+  // lazily via raw.githubusercontent.com (CORS-enabled) only when a tab needs it.
+  const INTRADAY_BASE = 'https://raw.githubusercontent.com/joshuakeum9-cell/plainsight/data-intraday/';
+  const intradayCache = {};
+  const intraday = (file) => (intradayCache[file] ??= fetch(INTRADAY_BASE + file).then((r) => {
+    if (!r.ok) throw new Error(r.status);
+    return r.json();
+  }));
+  const fmtTime = (ts) => new Date(ts * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+  const fmtDayTime = (ts) => new Date(ts * 1000).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'America/New_York' }) + ' ' + fmtTime(ts);
+  async function renderIntraday(range) {
+    const box = document.getElementById('priceChart');
+    box.textContent = 'Loading…';
+    let data;
+    try { data = await intraday(range === '1D' ? 'intraday-1d.json' : 'intraday-5d.json'); }
+    catch { box.textContent = 'Intraday data unavailable right now.'; return; }
+    const s = data.series[PS.qKey(t)];
+    if (!s || s.c.length < 2) { box.textContent = 'No intraday data for this company yet.'; return; }
+    const up = range === '1D' && s.pc != null ? s.c.at(-1) >= s.pc : s.c.at(-1) >= s.c[0];
+    PSCharts.lineChart(box, {
+      labels: s.t.map(range === '1D' ? fmtTime : fmtDayTime),
+      series: [{ name: 'Price', color: up ? 'var(--chart-1)' : 'var(--down)', values: s.c }],
+      fmt: (v, tick) => tick ? '$' + PS.fmtNum(v, true) : '$' + PS.fmtPrice(v),
+      height: 300, area: true, table: false,
+    });
+  }
   function renderPrice(range) {
+    if (range === '1D' || range === '5D') return renderIntraday(range);
     let src, labels, values;
     const days = { '1M': 22, '3M': 64, '6M': 128, '1Y': Infinity }[range];
     if (days) {

@@ -48,7 +48,7 @@
       </details>
       <details>
         <summary>How live is "live"?</summary>
-        <p class="ans">Quotes refresh automatically every 30 minutes during market hours via an open GitHub Actions pipeline. Price history and fundamentals refresh nightly. Every page shows its "last updated" stamp, so you always know exactly how fresh the numbers are.</p>
+        <p class="ans">Quotes and intraday charts refresh automatically every 15 minutes during market hours via an open GitHub Actions pipeline. Price history and fundamentals refresh nightly. Every page shows its "last updated" stamp, so you always know exactly how fresh the numbers are. Outside market hours the stamp says "market closed" and the last session's numbers stand.</p>
       </details>
       <details>
         <summary>Which companies are covered?</summary>
@@ -89,11 +89,11 @@
   </svg>
 </footer>
 
-<script src="assets/data.js?v=2"></script>
+<script src="assets/data.js?v=3"></script>
 <script>
   PS.burger();
   PS.quotes().then((q) => {
-    document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
+    document.getElementById('navStamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}${PS.marketNote()}`;
   }).catch(() => {});
 </script>
 </body>

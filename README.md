@@ -22,7 +22,7 @@ Plainsight turns official SEC filings and live market data into clean one-page c
 
 Two GitHub Actions keep it live:
 
-- `.github/workflows/quotes.yml` — refreshes `data/quotes.json` every 30 minutes during US market hours.
+- `.github/workflows/quotes.yml` — refreshes `data/quotes.json` and the intraday series (1D/5D, on the single-commit `data-intraday` branch) every 15 minutes during US market hours.
 - `.github/workflows/daily.yml` — nightly refresh of the universe, per-ticker price history, and EDGAR fundamentals.
 
 Each run commits the updated JSON to `data/`, and GitHub Pages redeploys automatically. Every page shows its "last updated" stamp.
@@ -48,7 +48,7 @@ Then open http://localhost:8140.
 
 ## Data notes & honest limitations
 
-- Quotes can be up to ~30 minutes old (the refresh cadence); the stamp on every page tells you exactly.
+- Quotes can be up to ~15 minutes old plus CDN cache (the refresh cadence); the stamp on every page tells you exactly.
 - TTM cash-flow metrics use YTD arithmetic (last FY + current YTD − prior-year YTD) because 10-Q cash flow statements are cumulative.
 - Q4 values are derived (FY minus the three reported quarters) and flagged in tooltips.
 - Multi-class share structures with unequal classes (e.g. BRK.B) get per-share metrics suppressed rather than shown wrong.

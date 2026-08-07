@@ -2,9 +2,9 @@ name: Refresh quotes
 
 on:
   schedule:
-    # Every 30 min during US market hours (13:30–20:00 UTC), Mon–Fri,
+    # Every 15 min during US market hours (13:30–20:00 UTC), Mon–Fri,
     # plus one run after close to capture the settle.
-    - cron: "*/30 13-20 * * 1-5"
+    - cron: "*/15 13-20 * * 1-5"
     - cron: "15 21 * * 1-5"
   workflow_dispatch:
 
@@ -37,3 +37,16 @@ jobs:
             git pull --rebase origin main
             git push
           fi
+      - name: Refresh intraday series
+        run: node scripts/refresh-intraday.mjs
+      - name: Publish intraday branch (single commit, no history bloat)
+        run: |
+          cd intraday-out
+          git init -q -b data-intraday
+          git config user.name "plainsight-bot"
+          git config user.email "actions@github.com"
+          git add .
+          git commit -qm "intraday data"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data-intraday
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

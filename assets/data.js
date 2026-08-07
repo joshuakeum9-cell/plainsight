@@ -58,6 +58,17 @@
       const d = new Date(iso);
       return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
     },
+    // ' · market closed' outside NYSE regular hours, so a quiet stamp
+    // reads as intentional rather than broken. Ignores exchange holidays.
+    marketNote() {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      }).formatToParts(new Date());
+      const get = (k) => parts.find((x) => x.type === k)?.value;
+      const mins = (parseInt(get('hour'), 10) % 24) * 60 + parseInt(get('minute'), 10);
+      const open = !['Sat', 'Sun'].includes(get('weekday')) && mins >= 570 && mins < 960;
+      return open ? '' : ' · market closed';
+    },
     fyLabel: (end) => "FY'" + end.slice(2, 4),
     qLabel(end) {
       const d = new Date(end + 'T00:00:00');

@@ -4,7 +4,7 @@
   PS.attachSearch(document.getElementById('search'), document.getElementById('searchResults'));
 
   const [q, u] = await Promise.all([PS.quotes(), PS.universe()]);
-  document.getElementById('stamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}`;
+  document.getElementById('stamp').textContent = `Updated ${PS.fmtUpdated(q.updated)}${PS.marketNote()}`;
 
   // ---- indices ---- (^TNX quotes the 10-yr yield ×10)
   document.getElementById('indices').innerHTML = Object.entries(q.indices).map(([k, d]) => {

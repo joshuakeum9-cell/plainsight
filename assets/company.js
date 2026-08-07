@@ -1,7 +1,6 @@
 /* Company report page: live header, price chart, key metrics, fundamentals charts. */
 (async function () {
   PS.burger();
-  PS.attachSearch(document.getElementById('search'), document.getElementById('searchResults'));
 
   const params = new URLSearchParams(location.search);
   const t = (params.get('t') || 'AAPL').toUpperCase();

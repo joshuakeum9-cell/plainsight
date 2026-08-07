@@ -23,11 +23,9 @@
   .range-line .track { position: relative; height: 6px; border-radius: 3px; background: var(--surface-strong); }
   .range-line .track .fill { position: absolute; top: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--chart-1); border: 2px solid var(--canvas); }
   .profile-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-md); }
-  .rh-search { position: relative; width: 320px; margin-left: auto; }
-  .rh-search .text-input { height: 42px; font-size: 14px; }
   .section-h { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 16px; }
   @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .profile-grid { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .rh-search { width: 100%; margin-left: 0; } .rh-price { font-size: 38px; } }
+  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .rh-price { font-size: 38px; } }
 </style>
 </head>
 <body>
@@ -61,10 +59,6 @@
     <div class="rh-top">
       <span class="sym-chip" id="rSym" style="font-size:15px;padding:4px 10px"></span>
       <h1 class="display-sm" id="rName"></h1>
-      <div class="rh-search search-wrap">
-        <input id="search" class="text-input" type="text" placeholder="Search another company…" autocomplete="off" spellcheck="false">
-        <div id="searchResults" class="search-results"></div>
-      </div>
     </div>
     <div class="rh-top" style="margin-top:10px" id="rBadges"></div>
     <div class="rh-price-row">
@@ -129,6 +123,6 @@
 
 <script src="assets/data.js?v=2"></script>
 <script src="assets/charts.js?v=3"></script>
-<script src="assets/company.js?v=5"></script>
+<script src="assets/company.js?v=6"></script>
 </body>
 </html>

@@ -48,7 +48,9 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+/* overflow-y:scroll keeps the scrollbar gutter permanent so pages never
+   shift sideways when content height changes during load */
+html { scroll-behavior: smooth; overflow-y: scroll; }
 body {
   font-family: var(--font);
   font-size: 16px; line-height: 1.55; color: var(--body);

@@ -208,18 +208,23 @@ await pool(
       roeTTM: niTTM != null && balances.equity.latest?.v ? round((niTTM / balances.equity.latest.v) * 100, 1) : null,
     };
 
-    // Company profile from submissions (industry, HQ, fiscal year end)
+    // Company profile from submissions (industry, HQ, fiscal year end).
+    // Profiles rarely change, so reuse last night's and refetch only on the
+    // 1st of the month — halves our EDGAR request volume (fair-use: 10 req/s).
     let profile = null;
-    const sub = await fetchJSON(`https://data.sec.gov/submissions/CIK${co.cik}.json`);
-    if (sub.ok) {
-      profile = {
-        sic: sub.data.sicDescription || null,
-        fye: sub.data.fiscalYearEnd || null,
-        city: sub.data.addresses?.business?.city || null,
-        state: sub.data.addresses?.business?.stateOrCountry || null,
-        website: sub.data.website || null,
-        exchange: sub.data.exchanges?.[0] || null,
-      };
+    try { profile = (await readJSON(`data/fundamentals/${co.t.replace(/\./g, '-')}.json`)).profile || null; } catch { /* first run */ }
+    if (!profile || new Date().getUTCDate() === 1) {
+      const sub = await fetchJSON(`https://data.sec.gov/submissions/CIK${co.cik}.json`);
+      if (sub.ok) {
+        profile = {
+          sic: sub.data.sicDescription || null,
+          fye: sub.data.fiscalYearEnd || null,
+          city: sub.data.addresses?.business?.city || null,
+          state: sub.data.addresses?.business?.stateOrCountry || null,
+          website: sub.data.website || null,
+          exchange: sub.data.exchanges?.[0] || null,
+        };
+      }
     }
 
     await writeJSON(`data/fundamentals/${co.t.replace(/\./g, '-')}.json`, {
@@ -240,7 +245,10 @@ await pool(
     });
     ok++;
   },
-  { concurrency: 4, spacingMs: 150, label: 'fundamentals' }
+  // SEC EDGAR fair-use is 10 req/s per IP; exceeding earns a ~10-minute block
+  // (which is what a half-failed nightly looks like). These settings keep the
+  // effective rate near ~5 req/s with headroom for fast cache hits.
+  { concurrency: 2, spacingMs: 300, label: 'fundamentals' }
 );
 
 console.log(`fundamentals done: ${ok} ok, ${fail} fetch-failed, ${noFacts} no us-gaap of ${companies.length}`);

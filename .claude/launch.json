@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "plainsight",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8140"],
+      "port": 8140
+    }
+  ]
+}

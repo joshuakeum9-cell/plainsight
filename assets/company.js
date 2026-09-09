@@ -148,14 +148,60 @@
   const years = A.revenue.slice(-10);
   const yl = years.map((r) => PS.fyLabel(r.end));
 
+  // Per-share figures sit on mixed bases: a 10-K restates only its two
+  // comparative years, so anything older keeps the pre-split numbers (Apple's
+  // FY2017 EPS still reads $9.21 next to a post-split $2.98 for FY2018, which
+  // charts as a 68% collapse that never happened). The diluted-share series
+  // shows where the basis changes; Yahoo's split events supply the exact ratio,
+  // so a share count that jumps for any other reason (a merger, a big issuance)
+  // is left alone. Returns the cumulative factor to apply at each index.
+  function splitFactors(ends, sharesByEnd) {
+    const out = new Array(ends.length).fill(1);
+    const splits = h.splits || [];
+    if (!splits.length) return out;
+    let factor = 1;
+    for (let i = ends.length - 1; i >= 1; i--) {
+      const cur = sharesByEnd.get(ends[i]), prev = sharesByEnd.get(ends[i - 1]);
+      if (cur && prev) {
+        const jump = cur / prev;
+        if (jump > 1.35 || jump < 0.75) {
+          const fwd = splits.find((sp) => Math.abs(sp.r - jump) / sp.r < 0.15);
+          const rev = splits.find((sp) => Math.abs(1 / sp.r - jump) * sp.r < 0.15);
+          if (fwd) factor *= fwd.r;
+          else if (rev) factor /= rev.r;
+        }
+      }
+      out[i - 1] = factor;
+    }
+    return out;
+  }
+  const sharesByEnd = new Map((f.dilutedShares || []).map((r) => [r.end, r.v]));
+
+  // A fiscal year can be up to ~12 months stale (Apple's FY2026 doesn't close
+  // until late September), so append a trailing-twelve-month bar covering the
+  // four most recent reported quarters. Skipped when the latest quarter IS the
+  // fiscal year end, where TTM would just duplicate the final bar.
+  const lastQEnd = (f.quarterly?.revenue || []).at(-1)?.end;
+  const lastFYEnd = years.at(-1)?.end;
+  const ttmOn = lastQEnd && lastFYEnd && Date.parse(lastQEnd) - Date.parse(lastFYEnd) > 45 * 86400000;
+  const ttmNote = ttmOn ? `TTM = 12 months to ${PS.qLabel(lastQEnd)}` : '';
+  const withTTM = (labels, values, ttmValue) => (ttmOn && ttmValue != null
+    ? { labels: [...labels, 'TTM'], values: [...values, ttmValue], lastBarColor: 'var(--chart-5)', lastBarNote: ttmNote }
+    : { labels, values });
+  const ttmSub = ttmOn ? ' · final bar is trailing 12 months' : '';
+
   if (years.length >= 2) {
-    PSCharts.barChart(card('Revenue', 'total annual revenue · % is growth vs. prior year'), {
-      labels: yl, series: [{ name: 'Revenue', color: 'var(--chart-1)', values: years.map((r) => r.v) }],
+    const rev = withTTM(yl, years.map((r) => r.v), s.revTTM);
+    PSCharts.barChart(card('Revenue', 'total annual revenue · % is growth vs. prior year' + ttmSub), {
+      labels: rev.labels, series: [{ name: 'Revenue', color: 'var(--chart-1)', values: rev.values }],
       fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
+      lastBarColor: rev.lastBarColor, lastBarNote: rev.lastBarNote,
     });
-    PSCharts.barChart(card('Net income', 'profit after all expenses and tax · % vs. prior year'), {
-      labels: yl, series: [{ name: 'Net income', color: 'var(--chart-2)', values: align(A.netIncome, years) }],
+    const ni = withTTM(yl, align(A.netIncome, years), s.niTTM);
+    PSCharts.barChart(card('Net income', 'profit after all expenses and tax · % vs. prior year' + ttmSub), {
+      labels: ni.labels, series: [{ name: 'Net income', color: 'var(--chart-2)', values: ni.values }],
       fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
+      lastBarColor: ni.lastBarColor, lastBarNote: ni.lastBarNote,
     });
     // margins
     const gm = years.map((r, i) => { const g = align(A.grossProfit, years)[i]; return g != null && r.v ? (g / r.v) * 100 : null; });
@@ -171,10 +217,15 @@
       fmt: (v) => PS.fmtPct(v), fillGaps: true,
     });
     if (!unreliable && A.eps.length >= 2) {
-      PSCharts.barChart(card('EPS (diluted)', 'earnings per share · % vs. prior year'), {
-        labels: A.eps.slice(-10).map((r) => PS.fyLabel(r.end)),
-        series: [{ name: 'EPS', color: 'var(--chart-4)', values: A.eps.slice(-10).map((r) => r.v) }],
+      const e = A.eps.slice(-10);
+      const ef = splitFactors(e.map((r) => r.end), sharesByEnd);
+      const eVals = e.map((r, i) => (r.v == null ? null : r.v / ef[i]));
+      const eps = withTTM(e.map((r) => PS.fyLabel(r.end)), eVals, s.epsTTM);
+      PSCharts.barChart(card('EPS (diluted)', 'earnings per share · % vs. prior year' + ttmSub), {
+        labels: eps.labels,
+        series: [{ name: 'EPS', color: 'var(--chart-4)', values: eps.values }],
         fmt: (v) => '$' + (v == null ? '-' : v.toFixed(2)), negativeColor: 'var(--down)', growthLag: 1,
+        lastBarColor: eps.lastBarColor, lastBarNote: eps.lastBarNote,
       });
     }
     // cash flow
@@ -206,9 +257,11 @@
     }
     // shares outstanding
     if (f.dilutedShares?.length >= 3) {
-      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average; falling means buybacks are shrinking the float'), {
-        labels: f.dilutedShares.slice(-10).map((r) => PS.fyLabel(r.end)),
-        series: [{ name: 'Shares', color: 'var(--chart-1)', values: f.dilutedShares.slice(-10).map((r) => r.v) }],
+      const sh = f.dilutedShares.slice(-10);
+      const sf = splitFactors(sh.map((r) => r.end), sharesByEnd);
+      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average, split-adjusted; falling means buybacks are shrinking the float'), {
+        labels: sh.map((r) => PS.fyLabel(r.end)),
+        series: [{ name: 'Shares', color: 'var(--chart-1)', values: sh.map((r, i) => (r.v == null ? null : r.v * sf[i])) }],
         fmt: (v, tick) => PS.fmtNum(v, tick),
       });
     }

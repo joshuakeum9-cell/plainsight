@@ -39,6 +39,9 @@
   --chart-2: #b8892a;
   --chart-3: #ff4d8b;
   --chart-4: #8a6fd8;
+  /* muted step reserved for the TTM bar: same family as chart-1 so it reads as
+     "the same measure", desaturated so it reads as "not an audited year" */
+  --chart-5: #6ba58c;
   --chart-grid: #ebe5d8;
   /* radii */
   --r-xs: 6px; --r-sm: 8px; --r-md: 12px; --r-lg: 16px; --r-xl: 24px; --r-pill: 9999px;

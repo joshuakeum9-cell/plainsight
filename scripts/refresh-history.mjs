@@ -21,11 +21,26 @@ function compact(result) {
   return { t, c, v };
 }
 
-async function fetchRange(ySym, range, interval) {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?range=${range}&interval=${interval}&events=div`;
+async function fetchRange(ySym, range, interval, events = 'div') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ySym)}?range=${range}&interval=${interval}&events=${events}`;
   const r = await fetchJSON(url);
   if (!r.ok) return null;
   return r.data.chart?.result?.[0] || null;
+}
+
+// Stock splits, newest last: [{d: 'YYYY-MM-DD', r: 4}] for a 4-for-1.
+// EDGAR only restates the two comparative years inside a 10-K, so per-share
+// figures older than that stay on the pre-split basis; the report page uses
+// these events to put the whole EPS series on one basis.
+function splitEvents(result) {
+  const raw = result?.events?.splits || {};
+  return Object.values(raw)
+    .map((s) => ({
+      d: new Date((s.date || 0) * 1000).toISOString().slice(0, 10),
+      r: s.numerator && s.denominator ? round(s.numerator / s.denominator, 4) : null,
+    }))
+    .filter((s) => s.r && s.r > 0 && s.d > '1990-01-01')
+    .sort((a, b) => a.d.localeCompare(b.d));
 }
 
 let ok = 0, fail = 0;
@@ -34,7 +49,7 @@ await pool(
   async (sym) => {
     const ySym = toYahoo(sym);
     const daily = await fetchRange(ySym, '1y', '1d');
-    const monthly = await fetchRange(ySym, '10y', '1mo');
+    const monthly = await fetchRange(ySym, '10y', '1mo', 'split');
     if (!daily) { fail++; return; }
     const meta = daily.meta || {};
     const q = daily.indicators?.quote?.[0] || {};
@@ -55,6 +70,7 @@ await pool(
       },
       daily: compact(daily),
       monthly: monthly ? compact(monthly) : { t: [], c: [], v: [] },
+      splits: monthly ? splitEvents(monthly) : [],
     };
     const fileSym = sym.replace(/[\^]/g, '_IDX_').replace(/\./g, '-');
     await writeJSON(`data/history/${fileSym}.json`, out);

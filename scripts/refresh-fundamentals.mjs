@@ -11,7 +11,7 @@ if (process.env.LIMIT) companies = companies.slice(0, +process.env.LIMIT);
 
 // Concept fallback chains: first tag present wins (per data point, merged in order).
 const FLOW_CONCEPTS = {
-  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense'],
+  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue'],
   costOfRevenue: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfGoodsSold', 'CostOfServices'],
   grossProfit: ['GrossProfit'],
   opIncome: ['OperatingIncomeLoss'],
@@ -23,6 +23,14 @@ const FLOW_CONCEPTS = {
   buybacks: ['PaymentsForRepurchaseOfCommonStock'],
   dividendsPaid: ['PaymentsOfDividendsCommonStock', 'PaymentsOfDividends'],
 };
+// Filers that never report a single "total revenue" line: banks state net
+// interest income and noninterest income separately (their sum is what the
+// street calls revenue), and some utilities split regulated from unregulated.
+// Used only when the single-tag chain above comes up short.
+const COMPOSITE_REVENUE = [
+  [['InterestIncomeExpenseNet', 'InterestIncomeExpenseAfterProvisionForLoanLoss'], ['NoninterestIncome']],
+  [['RegulatedOperatingRevenue'], ['UnregulatedOperatingRevenue']],
+];
 const PER_SHARE_FLOW = {
   eps: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'],
   divPS: ['CommonStockDividendsPerShareDeclared', 'CommonStockDividendsPerShareCashPaid'],
@@ -84,15 +92,35 @@ function ttmFromYTD(gaap, tags, annual) {
   return lastFY.v + cur.val - prior.val;
 }
 
-function annualSeries(gaap, tags) {
-  const rows = collect(gaap, tags, isAnnualSpan);
+const toAnnual = (rows) => {
   const byEndYear = new Map();
   for (const r of rows) byEndYear.set(r.end.slice(0, 4), r); // later end dates win within a year label
-  return [...byEndYear.entries()].map(([, r]) => ({ end: r.end, v: r.val })).slice(-11);
+  return [...byEndYear.values()].map((r) => ({ end: r.end, v: r.val })).slice(-11);
+};
+const toQuarter = (rows) => rows.slice(-20).map((r) => ({ end: r.end, v: r.val }));
+
+function annualSeries(gaap, tags) {
+  return toAnnual(collect(gaap, tags, isAnnualSpan));
 }
 
 function quarterSeries(gaap, tags) {
-  return collect(gaap, tags, isQuarterSpan).slice(-20).map((r) => ({ end: r.end, v: r.val }));
+  return toQuarter(collect(gaap, tags, isQuarterSpan));
+}
+
+// Sum two or more concept groups over identical periods (see COMPOSITE_REVENUE).
+// A period is only emitted when every part reports it, so partial sums can't
+// masquerade as a total.
+function compositeRows(gaap, filter) {
+  for (const parts of COMPOSITE_REVENUE) {
+    const maps = parts.map((tags) => new Map(collect(gaap, tags, filter).map((r) => [r.start + '|' + r.end, r.val])));
+    if (maps.some((m) => !m.size)) continue;
+    const rows = [...maps[0].keys()]
+      .filter((k) => maps.every((m) => m.has(k)))
+      .map((k) => ({ start: k.split('|')[0], end: k.split('|')[1], val: maps.reduce((s, m) => s + m.get(k), 0) }))
+      .sort((a, b) => a.end.localeCompare(b.end));
+    if (rows.length >= 2) return rows;
+  }
+  return [];
 }
 
 function instantAnnual(gaap, tags) {
@@ -135,11 +163,37 @@ function withDerivedQ4(quarters, annuals) {
   return out.sort((a, b) => a.end.localeCompare(b.end)).slice(-17);
 }
 
+// Some filers tag a full-year figure with a quarter-length period: L3Harris put
+// FY2025 revenue ($21.9B) on a 90-day span ending 2026-01-02, which would both
+// strand the fiscal year and quadruple TTM. When a "quarter" dwarfs its peers,
+// sits at a date with no annual figure, and is newer than every annual we have,
+// it is that missing fiscal year -> move it across.
+function reclassifyMistaggedAnnual(annual, quarterly) {
+  if (quarterly.length < 4) return { annual, quarterly };
+  const sorted = quarterly.slice(-8).map((q) => Math.abs(q.v)).sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  const newestAnnual = annual.at(-1)?.end || '';
+  if (!med) return { annual, quarterly };
+  const keep = [], moved = [];
+  for (const q of quarterly) {
+    const outlier = Math.abs(q.v) > med * 2.5 && q.end > newestAnnual && !annual.some((a) => a.end === q.end);
+    (outlier ? moved : keep).push(q);
+  }
+  if (!moved.length) return { annual, quarterly };
+  const merged = [...annual, ...moved.map((m) => ({ end: m.end, v: m.v }))].sort((a, b) => a.end.localeCompare(b.end));
+  return { annual: merged.slice(-11), quarterly: keep };
+}
+
 const ttm = (quarters) => {
   const last4 = quarters.slice(-4);
   if (last4.length < 4) return null;
   // Quarters must be consecutive-ish: newest within 400 days of oldest.
   if (Date.parse(last4[3].end) - Date.parse(last4[0].end) > 400 * 86400000) return null;
+  // Refuse to sum a window still holding a mis-tagged full-year value rather
+  // than publish a TTM (and a P/S built on it) that is quietly several x too big.
+  const vals = last4.map((q) => Math.abs(q.v)).sort((a, b) => a - b);
+  const med = (vals[1] + vals[2]) / 2;
+  if (med > 0 && vals[3] > med * 2.5) return null;
   return last4.reduce((s, q) => s + q.v, 0);
 };
 
@@ -155,9 +209,27 @@ await pool(
 
     const annual = {}, quarterly = {};
     for (const [name, tags] of Object.entries(FLOW_CONCEPTS)) {
-      annual[name] = annualSeries(gaap, tags);
-      const q = quarterSeries(gaap, tags);
-      quarterly[name] = withDerivedQ4(q, annual[name]);
+      const fixed = reclassifyMistaggedAnnual(annualSeries(gaap, tags), quarterSeries(gaap, tags));
+      annual[name] = fixed.annual;
+      quarterly[name] = withDerivedQ4(fixed.quarterly, fixed.annual);
+    }
+    // Banks and split-revenue utilities: prefer the summed definition when the
+    // single-tag chain came up empty, short, stale, or landed on a fragment tag
+    // (e.g. Regions reports a $0.1B sliver under Revenues against $7B of real
+    // revenue). Equal-quality single tags win, so filers like Citi and JPMorgan
+    // that do report a true total keep it.
+    {
+      const cur = annual.revenue, ca = toAnnual(compositeRows(gaap, isAnnualSpan));
+      const a = cur.at(-1), b = ca.at(-1);
+      if (ca.length >= 3 && (cur.length < 3 || ca.length > cur.length || b.end > a.end || b.v > a.v * 2)) {
+        annual.revenue = ca;
+        // Only take the composite quarters if they are at least as fresh: a bank
+        // can report net interest income quarterly long after it stops reporting
+        // a matching noninterest-income period, which would strand the sum.
+        const cq = withDerivedQ4(toQuarter(compositeRows(gaap, isQuarterSpan)), ca);
+        const curQ = quarterly.revenue;
+        if (cq.length && (!curQ.length || cq.at(-1).end >= curQ.at(-1).end)) quarterly.revenue = cq;
+      }
     }
     for (const [name, tags] of Object.entries(PER_SHARE_FLOW)) {
       annual[name] = annualSeries(gaap, tags);

@@ -167,11 +167,16 @@
 
   // ---------- bar chart (grouped or stacked; supports negatives) ----------
   // opts: {labels, series:[{name,color,values}], stacked, fmt, height,
-  //        growthLag: show YoY % labels + tooltip rows (single-series only)}
+  //        growthLag: show YoY % labels + tooltip rows (single-series only),
+  //        lastBarColor + lastBarNote: set the final bar apart (used for the TTM
+  //        bar, which is not an audited fiscal year and gets no growth %)}
   function barChart(box, opts) {
     box.innerHTML = '';
     const growth = opts.growthLag && opts.series.length === 1
       ? growthSeries(opts.series[0].values, opts.growthLag) : null;
+    // A TTM period overlaps the fiscal year before it, so a % against that year
+    // would not be a like-for-like comparison. Leave it off.
+    if (growth && opts.lastBarColor) growth[growth.length - 1] = null;
     const W = 640, H = opts.height || 260, padL = 46, padR = 12, padT = growth ? 26 : 12, padB = 24;
     const labels = opts.labels;
     const series = opts.series.filter((s) => s.values.some((v) => v != null));
@@ -234,7 +239,9 @@
           x = gx + si * (barW + gap);
           y0 = Y(0); y1 = Y(v);
         }
-        const color = (opts.negativeColor && v < 0 && series.length === 1) ? opts.negativeColor : s.color;
+        const isLast = i === labels.length - 1;
+        const color = (opts.negativeColor && v < 0 && series.length === 1) ? opts.negativeColor
+          : (opts.lastBarColor && isLast && series.length === 1) ? opts.lastBarColor : s.color;
         const p = el('path', { d: barPath(x, v, y0, y1, opts.stacked ? groupW : barW), fill: color });
         if (opts.stacked) p.setAttribute('stroke', 'var(--canvas)'), p.setAttribute('stroke-width', 1);
         const g = growth ? growth[i] : null;
@@ -243,6 +250,7 @@
           const rect = svg.getBoundingClientRect();
           tip.innerHTML = `<div class="tl">${labels[i]}${opts.flags?.[i] ? ' <span style="color:var(--muted);font-weight:400">' + opts.flags[i] + '</span>' : ''}</div>` +
             tipRow(color, series.length > 1 ? s.name : '', opts.fmt(v)) +
+            (opts.lastBarNote && isLast ? `<div class="row"><span style="color:var(--muted)">${opts.lastBarNote}</span></div>` : '') +
             (g != null ? `<div class="row"><span class="sw" style="background:${g >= 0 ? 'var(--up)' : 'var(--down)'}"></span><span>${opts.growthLag === 4 ? 'vs. yr ago' : 'YoY'}: <strong style="color:${g >= 0 ? 'var(--up)' : 'var(--down)'}">${fmtGrowth(g)}</strong></span></div>` : '');
           placeTip(tip, box, ((x + barW / 2) / W) * rect.width, (Math.min(y0, y1) / H) * rect.height);
         });

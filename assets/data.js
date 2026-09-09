@@ -69,9 +69,17 @@
       const open = !['Sat', 'Sun'].includes(get('weekday')) && mins >= 570 && mins < 960;
       return open ? '' : ' · market closed';
     },
-    fyLabel: (end) => "FY'" + end.slice(2, 4),
+    // 52/53-week fiscal years ending in the first days of January belong to the
+    // PREVIOUS fiscal year: L3Harris's FY2025 ended 2026-01-02. Filers whose year
+    // genuinely ends in late January (Walmart, NVIDIA) keep their own year.
+    fyLabel(end) {
+      const d = new Date(end + 'T00:00:00');
+      const y = d.getMonth() === 0 && d.getDate() <= 7 ? d.getFullYear() - 1 : d.getFullYear();
+      return "FY'" + String(y).slice(2);
+    },
     qLabel(end) {
       const d = new Date(end + 'T00:00:00');
+      if (d.getMonth() === 0 && d.getDate() <= 7) return `Q4 '${String(d.getFullYear() - 1).slice(2)}`;
       return `Q${Math.floor(d.getMonth() / 3) + 1} '${String(d.getFullYear()).slice(2)}`;
     },
 

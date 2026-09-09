@@ -215,7 +215,7 @@ function instantAnnual(gaap, tags) {
   const annual = all.filter((r) => r.hasK);
   const series = (annual.length >= 3 ? annual : all).slice(-11).map((r) => ({ end: r.end, v: r.val }));
   const latest = all.at(-1) || null;
-  return { series, latest: latest ? { end: latest.end, v: latest.val } : null };
+  return { series, latest: latest ? { end: latest.end, v: latest.val } : null, byEnd: new Map(all.map((r) => [r.end, r.val])) };
 }
 
 // Derive Q4 = FY - (Q1+Q2+Q3) for flow concepts, then build a full quarter list.
@@ -365,6 +365,28 @@ async function buildCompany(co) {
     }
     const balances = {};
     for (const [name, tags] of Object.entries(INSTANT_CONCEPTS)) balances[name] = instantAnnual(gaap, tags);
+    // Liabilities are the least reliably tagged line on the balance sheet: Brown
+    // & Brown stopped reporting the Liabilities element after 2019, and others
+    // tag only a slice of it. Assets = liabilities + equity, so rebuild the
+    // series on the assets dates and fall back to that identity wherever the
+    // reported figure is missing or far below it. A modest shortfall is kept as
+    // filed: that is normally noncontrolling interests, which sit outside
+    // stockholders' equity and belong in neither column.
+    {
+      const impliedAt = (end) => {
+        const a = balances.assets.byEnd.get(end), e = balances.equity.byEnd.get(end);
+        return a != null && e != null ? a - e : null;
+      };
+      const pick = (end) => {
+        const reported = balances.liabilities.byEnd.get(end) ?? null;
+        const implied = impliedAt(end);
+        if (implied != null && implied > 0 && (reported == null || reported < implied * 0.8)) return implied;
+        return reported;
+      };
+      balances.liabilities.series = (balances.assets.series || [])
+        .map((a) => { const v = pick(a.end); return v == null ? null : { end: a.end, v }; })
+        .filter(Boolean);
+    }
 
     // Gross profit fallback: revenue - costOfRevenue
     if ((!annual.grossProfit || annual.grossProfit.length < 2) && annual.revenue.length && annual.costOfRevenue.length) {
@@ -394,8 +416,28 @@ async function buildCompany(co) {
     const capexTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.capex, annual.capex, cikNum);
     const sh = sharesLatest?.v || dilutedShares.at(-1)?.v || null;
 
+    // Cash returned to shareholders is reported year-to-date in 10-Qs, same as
+    // the cash-flow lines, so it takes the YTD arithmetic rather than a sum of
+    // discrete quarters.
+    const buybacksTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.buybacks, annual.buybacks, cikNum);
+    const dividendsTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.dividendsPaid, annual.dividendsPaid, cikNum);
+    // Balance sheets and share counts are point-in-time, so the newest QUARTER
+    // is what "current" means for them, not a trailing twelve months.
+    // Anchored on the newest assets date, reading the other lines at that same
+    // date; a tag with nothing there stays null rather than borrowing an older
+    // number and implying a balance sheet that never existed.
+    const bEnd = balances.assets.latest?.end || null;
+    const bAssets = bEnd ? balances.assets.byEnd.get(bEnd) ?? null : null;
+    const bEquity = bEnd ? balances.equity.byEnd.get(bEnd) ?? null : null;
+    let bLiab = bEnd ? balances.liabilities.byEnd.get(bEnd) ?? null : null;
+    const bImplied = bAssets != null && bEquity != null ? bAssets - bEquity : null;
+    if (bImplied != null && bImplied > 0 && (bLiab == null || bLiab < bImplied * 0.8)) bLiab = bImplied;
+    const latestBalance = { end: bEnd, assets: bAssets, liabilities: bLiab, equity: bEquity };
+    const qShares = quarterSeries(gaap, ['WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic'], cikNum);
+    const latestShares = qShares.at(-1) || null;
+
     const summary = {
-      revTTM, niTTM, ocfTTM, capexTTM,
+      revTTM, niTTM, ocfTTM, capexTTM, buybacksTTM, dividendsTTM,
       fcfTTM: ocfTTM != null && capexTTM != null ? ocfTTM - capexTTM : null,
       epsTTM: niTTM != null && sh ? round(niTTM / sh, 2) : null,
       sharesOut: sh,
@@ -441,6 +483,8 @@ async function buildCompany(co) {
       balances: Object.fromEntries(Object.entries(balances).map(([k, v]) => [k, v.series])),
       dilutedShares,
       sharesLatest,
+      latestBalance,
+      latestShares,
       summary,
     });
     ok++;

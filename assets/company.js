@@ -189,6 +189,9 @@
     ? { labels: [...labels, 'TTM'], values: [...values, ttmValue], lastBarColor: 'var(--chart-5)', lastBarNote: ttmNote }
     : { labels, values });
   const ttmSub = ttmOn ? ' · final bar is trailing 12 months' : '';
+  // Balance sheets and share counts are snapshots, not flows, so "current" for
+  // them is the newest quarter end rather than a trailing window.
+  const newerThan = (end, base) => end && base && Date.parse(end) - Date.parse(base) > 45 * 86400000;
 
   if (years.length >= 2) {
     const rev = withTTM(yl, years.map((r) => r.v), s.revTTM);
@@ -231,12 +234,13 @@
     // cash flow
     const ocf = align(A.ocf, years), capex = align(A.capex, years);
     const fcf = years.map((_, i) => (ocf[i] != null && capex[i] != null ? ocf[i] - capex[i] : null));
-    PSCharts.barChart(card('Cash flow', 'operating cash flow, capex, and free cash flow'), {
-      labels: yl,
+    const cfTTM = ttmOn && s.ocfTTM != null;
+    PSCharts.barChart(card('Cash flow', 'operating cash flow, capex, and free cash flow' + (cfTTM ? ttmSub : '')), {
+      labels: cfTTM ? [...yl, 'TTM'] : yl,
       series: [
-        { name: 'Operating CF', color: 'var(--chart-1)', values: ocf },
-        { name: 'Capex', color: 'var(--chart-2)', values: capex.map((v) => (v == null ? null : -v)) },
-        { name: 'Free CF', color: 'var(--chart-4)', values: fcf },
+        { name: 'Operating CF', color: 'var(--chart-1)', values: cfTTM ? [...ocf, s.ocfTTM] : ocf },
+        { name: 'Capex', color: 'var(--chart-2)', values: (cfTTM ? [...capex, s.capexTTM] : capex).map((v) => (v == null ? null : -v)) },
+        { name: 'Free CF', color: 'var(--chart-4)', values: cfTTM ? [...fcf, s.fcfTTM] : fcf },
       ].filter((sr) => sr.values.some((v) => v != null)),
       fmt: PS.fmtMoney,
     });
@@ -244,13 +248,16 @@
     const B = f.balances;
     const bl = (B.assets || []).slice(-10);
     if (bl.length >= 2) {
+      const lb = f.latestBalance;
+      const bsNow = lb && newerThan(lb.end, bl.at(-1).end) && lb.assets != null;
       const bYl = bl.map((r) => PS.fyLabel(r.end));
-      PSCharts.barChart(card('Balance sheet', 'assets vs. liabilities vs. equity at fiscal year end'), {
-        labels: bYl,
+      PSCharts.barChart(card('Balance sheet', 'assets vs. liabilities vs. equity at fiscal year end'
+        + (bsNow ? ` · final column is the latest quarter (${PS.qLabel(lb.end)})` : '')), {
+        labels: bsNow ? [...bYl, PS.qLabel(lb.end)] : bYl,
         series: [
-          { name: 'Assets', color: 'var(--chart-1)', values: bl.map((r) => r.v) },
-          { name: 'Liabilities', color: 'var(--chart-2)', values: align(B.liabilities || [], bl) },
-          { name: 'Equity', color: 'var(--chart-4)', values: align(B.equity || [], bl) },
+          { name: 'Assets', color: 'var(--chart-1)', values: bsNow ? [...bl.map((r) => r.v), lb.assets] : bl.map((r) => r.v) },
+          { name: 'Liabilities', color: 'var(--chart-2)', values: bsNow ? [...align(B.liabilities || [], bl), lb.liabilities] : align(B.liabilities || [], bl) },
+          { name: 'Equity', color: 'var(--chart-4)', values: bsNow ? [...align(B.equity || [], bl), lb.equity] : align(B.equity || [], bl) },
         ].filter((sr) => sr.values.some((v) => v != null)),
         fmt: PS.fmtMoney,
       });
@@ -259,20 +266,25 @@
     if (f.dilutedShares?.length >= 3) {
       const sh = f.dilutedShares.slice(-10);
       const sf = splitFactors(sh.map((r) => r.end), sharesByEnd);
-      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average, split-adjusted; falling means buybacks are shrinking the float'), {
-        labels: sh.map((r) => PS.fyLabel(r.end)),
-        series: [{ name: 'Shares', color: 'var(--chart-1)', values: sh.map((r, i) => (r.v == null ? null : r.v * sf[i])) }],
+      const ls = f.latestShares;
+      const shNow = ls && newerThan(ls.end, sh.at(-1).end) && ls.v != null;
+      const shVals = sh.map((r, i) => (r.v == null ? null : r.v * sf[i]));
+      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average, split-adjusted; falling means buybacks are shrinking the float'
+        + (shNow ? ` · to ${PS.qLabel(ls.end)}` : '')), {
+        labels: shNow ? [...sh.map((r) => PS.fyLabel(r.end)), PS.qLabel(ls.end)] : sh.map((r) => PS.fyLabel(r.end)),
+        series: [{ name: 'Shares', color: 'var(--chart-1)', values: shNow ? [...shVals, ls.v] : shVals }],
         fmt: (v, tick) => PS.fmtNum(v, tick),
       });
     }
     // capital returns
     const bb = align(A.buybacks, years), dv = align(A.dividendsPaid, years);
     if (bb.some((v) => v) || dv.some((v) => v)) {
-      PSCharts.barChart(card('Capital returned', 'cash spent on buybacks and dividends'), {
-        labels: yl,
+      const crTTM = ttmOn && (s.buybacksTTM != null || s.dividendsTTM != null);
+      PSCharts.barChart(card('Capital returned', 'cash spent on buybacks and dividends' + (crTTM ? ttmSub : '')), {
+        labels: crTTM ? [...yl, 'TTM'] : yl,
         series: [
-          { name: 'Buybacks', color: 'var(--chart-1)', values: bb },
-          { name: 'Dividends', color: 'var(--chart-3)', values: dv },
+          { name: 'Buybacks', color: 'var(--chart-1)', values: crTTM ? [...bb, s.buybacksTTM] : bb },
+          { name: 'Dividends', color: 'var(--chart-3)', values: crTTM ? [...dv, s.dividendsTTM] : dv },
         ].filter((sr) => sr.values.some((v) => v != null)),
         stacked: true, fmt: PS.fmtMoney,
       });

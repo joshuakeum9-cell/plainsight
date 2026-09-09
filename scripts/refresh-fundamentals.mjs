@@ -2,7 +2,7 @@
 // Extracts 10 fiscal years of annual series + recent quarters for key concepts,
 // derives Q4 values, computes TTM aggregates, and writes data/fundamentals/<TICKER>.json.
 // Also merges EDGAR submissions metadata (SIC industry, HQ, fiscal year end).
-import { fetchJSON, pool, writeJSON, readJSON, round } from './lib.mjs';
+import { fetchJSON, fetchText, pool, writeJSON, readJSON, round } from './lib.mjs';
 
 const universe = await readJSON('data/universe.json');
 let companies = universe.companies.filter((c) => c.cik);
@@ -11,7 +11,7 @@ if (process.env.LIMIT) companies = companies.slice(0, +process.env.LIMIT);
 
 // Concept fallback chains: first tag present wins (per data point, merged in order).
 const FLOW_CONCEPTS = {
-  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue'],
+  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue', 'OperatingLeaseLeaseIncome', 'OperatingLeasesIncomeStatementLeaseRevenue'],
   costOfRevenue: ['CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfGoodsSold', 'CostOfServices'],
   grossProfit: ['GrossProfit'],
   opIncome: ['OperatingIncomeLoss'],
@@ -30,6 +30,10 @@ const FLOW_CONCEPTS = {
 const COMPOSITE_REVENUE = [
   [['InterestIncomeExpenseNet', 'InterestIncomeExpenseAfterProvisionForLoanLoss'], ['NoninterestIncome']],
   [['RegulatedOperatingRevenue'], ['UnregulatedOperatingRevenue']],
+  // Last resort for filers that tag no total at all (APA reports its oil and gas
+  // sales only in its own namespace): revenue == operating income + the costs
+  // and expenses deducted to reach it.
+  [['OperatingIncomeLoss'], ['CostsAndExpenses']],
 ];
 const PER_SHARE_FLOW = {
   eps: ['EarningsPerShareDiluted', 'EarningsPerShareBasic'],
@@ -43,8 +47,58 @@ const INSTANT_CONCEPTS = {
   ltDebt: ['LongTermDebtNoncurrent', 'LongTermDebt'],
 };
 
+// ---- recent-period backfill from EDGAR's frames endpoint ----
+// companyfacts can trail a filing by weeks: Abbott's Q2 2026 10-Q was filed
+// 2026-07-28 and was still absent in September, leaving ~70 S&P companies a
+// quarter behind. frames serves one concept for one period across every filer
+// in a single call and already carries those numbers, so a few dozen requests
+// up front fill the gap for the whole index.
+const FRAME_CONCEPTS = [
+  ...FLOW_CONCEPTS.revenue, ...FLOW_CONCEPTS.netIncome, ...FLOW_CONCEPTS.opIncome,
+  ...FLOW_CONCEPTS.grossProfit, ...FLOW_CONCEPTS.ocf, ...FLOW_CONCEPTS.capex,
+  ...COMPOSITE_REVENUE.flat(2),
+].map((t) => [t, 'USD']).concat(PER_SHARE_FLOW.eps.map((t) => [t, 'USD-per-shares']));
+
+// Completed calendar quarters (the current one has not closed) plus recent
+// full years, which is where any lag can bite.
+function recentFrames(now = new Date()) {
+  const y = now.getUTCFullYear();
+  let yy = y, qq = Math.floor(now.getUTCMonth() / 3);
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    if (qq < 1) { qq = 4; yy--; }
+    out.push(`CY${yy}Q${qq}`);
+    qq--;
+  }
+  return [...out, `CY${y - 1}`, `CY${y - 2}`];
+}
+
+const FRAMES = new Map(); // tag -> Map(cik -> [{start, end, val}])
+async function loadFrames(ciks) {
+  const jobs = [];
+  for (const [tag, uom] of FRAME_CONCEPTS) for (const p of recentFrames()) jobs.push({ tag, uom, p });
+  await pool(jobs, async ({ tag, uom, p }) => {
+    const r = await fetchJSON(`https://data.sec.gov/api/xbrl/frames/us-gaap/${tag}/${uom}/${p}.json`);
+    if (!r.ok) return; // a concept with no filers for a period simply 404s
+    let m = FRAMES.get(tag);
+    if (!m) FRAMES.set(tag, (m = new Map()));
+    for (const d of r.data.data || []) {
+      if (d.val == null || !d.start || !d.end || !ciks.has(d.cik)) continue;
+      const row = { start: d.start, end: d.end, val: d.val };
+      const arr = m.get(d.cik);
+      if (arr) arr.push(row); else m.set(d.cik, [row]);
+    }
+  }, { concurrency: 2, spacingMs: 250, label: 'frames' });
+  let n = 0;
+  for (const m of FRAMES.values()) for (const a of m.values()) n += a.length;
+  console.log(`frames loaded: ${FRAMES.size} concepts, ${n} facts for the universe`);
+}
+
 const isAnnualSpan = (u) => u.start && u.end && (Date.parse(u.end) - Date.parse(u.start)) / 86400000 > 320;
-const isQuarterSpan = (u) => u.start && u.end && (() => { const d = (Date.parse(u.end) - Date.parse(u.start)) / 86400000; return d > 75 && d < 105; })();
+// Up to ~17 weeks: most quarters run 13 weeks, but retailers on a 52/53-week
+// calendar use a 16-week opening quarter (Kroger's Q1 is 111 days). Six-month
+// year-to-date spans (~180d) stay out.
+const isQuarterSpan = (u) => u.start && u.end && (() => { const d = (Date.parse(u.end) - Date.parse(u.start)) / 86400000; return d > 75 && d < 125; })();
 
 function unitEntries(fact) {
   if (!fact?.units) return [];
@@ -52,19 +106,37 @@ function unitEntries(fact) {
   return fact.units[key] || [];
 }
 
-// Merge fallback concepts: collect entries, prefer earlier concepts on collisions.
-function collect(gaap, tags, filter) {
+// Merge fallback concepts into one series per period.
+// Same tag -> the later filing wins, which picks up restatements. Different
+// tags -> the first listed wins, EXCEPT under `pickMax` (revenue), where the
+// largest wins: several filers put only a sliver of their revenue in the
+// first-listed tag and the real total in another. Essex reported $0.01B of
+// "revenue from contracts with customers" against $1.89B of Revenues, and
+// American Tower $0.94B against $10.64B. A total is never smaller than a part,
+// so the largest candidate is the total.
+function collect(gaap, tags, filter, cik, pickMax) {
   const byKey = new Map();
+  const consider = (u, tag, filed) => {
+    if (!filter(u)) return;
+    const key = (u.start || '') + '|' + u.end;
+    const existing = byKey.get(key);
+    let better;
+    if (!existing) better = true;
+    else if (existing.tag === tag) better = (filed || '') > (existing.filed || '');
+    else better = pickMax ? Math.abs(u.val) > Math.abs(existing.val) : false;
+    if (better) byKey.set(key, { start: u.start, end: u.end, val: u.val, fy: u.fy, fp: u.fp, filed, tag });
+  };
   for (const tag of tags) {
     for (const u of unitEntries(gaap[tag])) {
       if (!/^10-[KQ]/.test(u.form || '')) continue;
-      if (!filter(u)) continue;
-      const key = (u.start || '') + '|' + u.end;
-      const existing = byKey.get(key);
-      // Keep first-listed concept; within a concept keep the latest filing (restatements).
-      if (!existing || (existing.tag === tag && (u.filed || '') > (existing.filed || ''))) {
-        byKey.set(key, { start: u.start, end: u.end, val: u.val, fy: u.fy, fp: u.fp, filed: u.filed, tag });
-      }
+      consider(u, tag, u.filed);
+    }
+  }
+  // Frames fills periods companyfacts has not ingested yet; a frames fact has no
+  // filing date, so it only ever loses a same-tag contest against a real one.
+  if (cik != null) {
+    for (const tag of tags) {
+      for (const u of FRAMES.get(tag)?.get(cik) || []) consider(u, tag, '');
     }
   }
   return [...byKey.values()].sort((a, b) => a.end.localeCompare(b.end));
@@ -72,10 +144,10 @@ function collect(gaap, tags, filter) {
 
 // TTM for cumulative-only flows (cash flow statements are year-to-date in 10-Qs):
 // TTM = last full FY + latest YTD - prior-year matching YTD.
-function ttmFromYTD(gaap, tags, annual) {
+function ttmFromYTD(gaap, tags, annual, cik) {
   const lastFY = annual.at(-1);
   if (!lastFY) return null;
-  const spans = collect(gaap, tags, (u) => u.start && u.end && (Date.parse(u.end) - Date.parse(u.start)) / 86400000 < 310);
+  const spans = collect(gaap, tags, (u) => u.start && u.end && (Date.parse(u.end) - Date.parse(u.start)) / 86400000 < 310, cik);
   const after = spans.filter((r) => r.end > lastFY.end);
   if (!after.length) return lastFY.v; // FY is the freshest period we have
   // Longest span ending at the most recent date = the current YTD.
@@ -99,20 +171,20 @@ const toAnnual = (rows) => {
 };
 const toQuarter = (rows) => rows.slice(-20).map((r) => ({ end: r.end, v: r.val }));
 
-function annualSeries(gaap, tags) {
-  return toAnnual(collect(gaap, tags, isAnnualSpan));
+function annualSeries(gaap, tags, cik, pickMax) {
+  return toAnnual(collect(gaap, tags, isAnnualSpan, cik, pickMax));
 }
 
-function quarterSeries(gaap, tags) {
-  return toQuarter(collect(gaap, tags, isQuarterSpan));
+function quarterSeries(gaap, tags, cik, pickMax) {
+  return toQuarter(collect(gaap, tags, isQuarterSpan, cik, pickMax));
 }
 
 // Sum two or more concept groups over identical periods (see COMPOSITE_REVENUE).
 // A period is only emitted when every part reports it, so partial sums can't
 // masquerade as a total.
-function compositeRows(gaap, filter) {
+function compositeRows(gaap, filter, cik) {
   for (const parts of COMPOSITE_REVENUE) {
-    const maps = parts.map((tags) => new Map(collect(gaap, tags, filter).map((r) => [r.start + '|' + r.end, r.val])));
+    const maps = parts.map((tags) => new Map(collect(gaap, tags, filter, cik).map((r) => [r.start + '|' + r.end, r.val])));
     if (maps.some((m) => !m.size)) continue;
     const rows = [...maps[0].keys()]
       .filter((k) => maps.every((m) => m.has(k)))
@@ -174,9 +246,19 @@ function reclassifyMistaggedAnnual(annual, quarterly) {
   const med = sorted[Math.floor(sorted.length / 2)];
   const newestAnnual = annual.at(-1)?.end || '';
   if (!med) return { annual, quarterly };
+  // The date must also fall on the anniversary of the last fiscal year end,
+  // otherwise a genuine surge gets mistaken for a year: Micron's revenue tripled
+  // inside a year and its Q3 would otherwise have been swallowed as an annual.
+  const anniversary = (end) => {
+    if (!newestAnnual) return false;
+    const a = new Date(newestAnnual), e = new Date(end);
+    a.setUTCFullYear(a.getUTCFullYear() + 1);
+    return Math.abs(e - a) < 12 * 86400000;
+  };
   const keep = [], moved = [];
   for (const q of quarterly) {
-    const outlier = Math.abs(q.v) > med * 2.5 && q.end > newestAnnual && !annual.some((a) => a.end === q.end);
+    const outlier = Math.abs(q.v) > med * 2.5 && q.end > newestAnnual
+      && anniversary(q.end) && !annual.some((a) => a.end === q.end);
     (outlier ? moved : keep).push(q);
   }
   if (!moved.length) return { annual, quarterly };
@@ -197,19 +279,41 @@ const ttm = (quarters) => {
   return last4.reduce((s, q) => s + q.v, 0);
 };
 
+await loadFrames(new Set(companies.map((c) => parseInt(c.cik, 10))));
+
 let ok = 0, fail = 0, noFacts = 0;
-await pool(
-  companies,
-  async (co) => {
+// A holdco reorganisation moves the listed ticker to a brand-new CIK with no
+// filing history while the operating company keeps filing under the old one:
+// ExxonMobil Holdings Corp has a single 10-Q, Exxon Mobil Corp has 27. Merge the
+// predecessor's facts so the report still shows a decade of history.
+const PREDECESSOR_CIK = { XOM: '0000034088' };
+
+function mergeFacts(into, extra) {
+  for (const [tag, fact] of Object.entries(extra || {})) {
+    if (!into[tag]) { into[tag] = fact; continue; }
+    for (const [unit, rows] of Object.entries(fact.units || {})) {
+      into[tag].units[unit] = [...(into[tag].units[unit] || []), ...rows];
+    }
+  }
+}
+
+async function buildCompany(co) {
     const facts = await fetchJSON(`https://data.sec.gov/api/xbrl/companyfacts/CIK${co.cik}.json`);
     if (!facts.ok) { fail++; return; }
+    const cikNum = parseInt(co.cik, 10);
     const gaap = facts.data.facts?.['us-gaap'];
+    const predecessor = PREDECESSOR_CIK[co.t];
+    if (predecessor && gaap) {
+      const old = await fetchJSON(`https://data.sec.gov/api/xbrl/companyfacts/CIK${predecessor}.json`);
+      if (old.ok) mergeFacts(gaap, old.data.facts?.['us-gaap']);
+    }
     const dei = facts.data.facts?.dei;
     if (!gaap) { noFacts++; return; }
 
     const annual = {}, quarterly = {};
     for (const [name, tags] of Object.entries(FLOW_CONCEPTS)) {
-      const fixed = reclassifyMistaggedAnnual(annualSeries(gaap, tags), quarterSeries(gaap, tags));
+      const isRev = name === 'revenue';
+      const fixed = reclassifyMistaggedAnnual(annualSeries(gaap, tags, cikNum, isRev), quarterSeries(gaap, tags, cikNum, isRev));
       annual[name] = fixed.annual;
       quarterly[name] = withDerivedQ4(fixed.quarterly, fixed.annual);
     }
@@ -219,21 +323,45 @@ await pool(
     // revenue). Equal-quality single tags win, so filers like Citi and JPMorgan
     // that do report a true total keep it.
     {
-      const cur = annual.revenue, ca = toAnnual(compositeRows(gaap, isAnnualSpan));
+      const cur = annual.revenue, ca = toAnnual(compositeRows(gaap, isAnnualSpan, cikNum));
       const a = cur.at(-1), b = ca.at(-1);
-      if (ca.length >= 3 && (cur.length < 3 || ca.length > cur.length || b.end > a.end || b.v > a.v * 2)) {
+      // Never trade a current series for a longer but staler one: GE's
+      // operating-income identity runs out in 2014 while its revenue tag is
+      // current, so "more history" alone must not win.
+      const fresher = !a || (b && b.end >= a.end);
+      if (ca.length >= 3 && (cur.length < 3
+          || (b && a && b.end > a.end)
+          || (fresher && (ca.length > cur.length || b.v > a.v * 2)))) {
         annual.revenue = ca;
         // Only take the composite quarters if they are at least as fresh: a bank
         // can report net interest income quarterly long after it stops reporting
         // a matching noninterest-income period, which would strand the sum.
-        const cq = withDerivedQ4(toQuarter(compositeRows(gaap, isQuarterSpan)), ca);
+        const cq = withDerivedQ4(toQuarter(compositeRows(gaap, isQuarterSpan, cikNum)), ca);
         const curQ = quarterly.revenue;
-        if (cq.length && (!curQ.length || cq.at(-1).end >= curQ.at(-1).end)) quarterly.revenue = cq;
+        // If the annual total is the summed definition, quarters taken from a
+        // single tag are measuring something narrower: Huntington's quarters came
+        // out at $0.5B against $8.2B a year. Four typical quarters should roughly
+        // reconstruct the year; when they fall far short, swap in the summed ones.
+        const yr = ca.at(-1)?.v || 0;
+        const q4 = curQ.slice(-4).map((q) => Math.abs(q.v)).sort((a, b) => a - b);
+        const fragment = yr > 0 && q4.length > 0 && q4[Math.floor(q4.length / 2)] * 4 < yr * 0.5;
+        if (cq.length && (!curQ.length || fragment || cq.at(-1).end >= curQ.at(-1).end)) quarterly.revenue = cq;
+      }
+      // Even when the annual total came from a single tag, that tag's QUARTERLY
+      // series can dead-end while the components keep reporting: BNY's Revenues
+      // stops in 2018 though net interest and noninterest income are current.
+      const cq2 = withDerivedQ4(toQuarter(compositeRows(gaap, isQuarterSpan, cikNum)), annual.revenue);
+      const q2 = quarterly.revenue;
+      if (cq2.length && q2.length && cq2.at(-1).end > q2.at(-1).end) {
+        const yr = annual.revenue.at(-1)?.v || 0;
+        const m4 = cq2.slice(-4).map((q) => Math.abs(q.v)).sort((a, b) => a - b);
+        const med4 = m4[Math.floor(m4.length / 2)] || 0;
+        if (yr > 0 && med4 * 4 > yr * 0.5 && med4 * 4 < yr * 2) quarterly.revenue = cq2;
       }
     }
     for (const [name, tags] of Object.entries(PER_SHARE_FLOW)) {
-      annual[name] = annualSeries(gaap, tags);
-      quarterly[name] = quarterSeries(gaap, tags); // per-share values don't sum across restatements; no Q4 derivation for eps display, but ttm eps uses derived below
+      annual[name] = annualSeries(gaap, tags, cikNum);
+      quarterly[name] = quarterSeries(gaap, tags, cikNum); // per-share values don't sum across restatements; no Q4 derivation for eps display, but ttm eps uses derived below
     }
     const balances = {};
     for (const [name, tags] of Object.entries(INSTANT_CONCEPTS)) balances[name] = instantAnnual(gaap, tags);
@@ -255,15 +383,15 @@ await pool(
       const sameEnd = entries.filter((e) => e.end === lastEnd);
       return { end: lastEnd, v: sameEnd.reduce((s, e) => s + e.val, 0) };
     })();
-    const dilutedShares = annualSeries(gaap, ['WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic']);
+    const dilutedShares = annualSeries(gaap, ['WeightedAverageNumberOfDilutedSharesOutstanding', 'WeightedAverageNumberOfSharesOutstandingBasic'], cikNum);
 
     // EPS TTM via netIncome TTM / latest diluted shares (more robust than summing eps restatements).
     // Income-statement TTM sums discrete quarters; cash-flow TTM uses YTD arithmetic
     // (10-Q cash flow statements are cumulative). Each falls back to the other method.
-    const niTTM = ttm(quarterly.netIncome) ?? ttmFromYTD(gaap, FLOW_CONCEPTS.netIncome, annual.netIncome);
-    const revTTM = ttm(quarterly.revenue) ?? ttmFromYTD(gaap, FLOW_CONCEPTS.revenue, annual.revenue);
-    const ocfTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.ocf, annual.ocf);
-    const capexTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.capex, annual.capex);
+    const niTTM = ttm(quarterly.netIncome) ?? ttmFromYTD(gaap, FLOW_CONCEPTS.netIncome, annual.netIncome, cikNum);
+    const revTTM = ttm(quarterly.revenue) ?? ttmFromYTD(gaap, FLOW_CONCEPTS.revenue, annual.revenue, cikNum);
+    const ocfTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.ocf, annual.ocf, cikNum);
+    const capexTTM = ttmFromYTD(gaap, FLOW_CONCEPTS.capex, annual.capex, cikNum);
     const sh = sharesLatest?.v || dilutedShares.at(-1)?.v || null;
 
     const summary = {
@@ -316,7 +444,11 @@ await pool(
       summary,
     });
     ok++;
-  },
+}
+
+await pool(
+  companies,
+  buildCompany,
   // SEC EDGAR fair-use is 10 req/s per IP; exceeding earns a ~10-minute block
   // (which is what a half-failed nightly looks like). These settings keep the
   // effective rate near ~5 req/s with headroom for fast cache hits.
@@ -324,4 +456,86 @@ await pool(
 );
 
 console.log(`fundamentals done: ${ok} ok, ${fail} fetch-failed, ${noFacts} no us-gaap of ${companies.length}`);
+
+// ---- last resort: read the filing itself ----
+// A filing can be weeks old and still be absent from BOTH companyfacts and
+// frames (Duke filed Q2 2026 on 2026-08-04; neither API carried a single fact
+// from it in September). The numbers do exist in the filing's own XBRL
+// instance, so for the stragglers we fetch that and merge it in. Instances are
+// small (Abbott's was 0.1 MB) and only a handful of companies ever need this.
+const DEEP_TAGS = new Set(FRAME_CONCEPTS.map(([t]) => t));
+
+function parseInstance(xml) {
+  // contexts without a <segment> are the consolidated ones we want
+  const ctx = new Map();
+  const ctxRe = /<(?:\w+:)?context[^>]*\sid="([^"]+)"[^>]*>([\s\S]*?)<\/(?:\w+:)?context>/g;
+  for (let m; (m = ctxRe.exec(xml));) {
+    const [, id, inner] = m;
+    if (/<(?:\w+:)?segment[\s>]/.test(inner)) continue; // dimensional breakdown, not the total
+    const sd = /<(?:\w+:)?startDate>([\d-]+)</.exec(inner);
+    const ed = /<(?:\w+:)?endDate>([\d-]+)</.exec(inner);
+    if (sd && ed) ctx.set(id, { start: sd[1], end: ed[1] });
+  }
+  const out = new Map(); // tag -> [{start, end, val}]
+  const factRe = /<us-gaap:([A-Za-z0-9]+)\s+[^>]*contextRef="([^"]+)"[^>]*>([-\d.]+)<\/us-gaap:[A-Za-z0-9]+>/g;
+  for (let m; (m = factRe.exec(xml));) {
+    const [, tag, ref, raw] = m;
+    if (!DEEP_TAGS.has(tag)) continue;
+    const period = ctx.get(ref);
+    const val = Number(raw);
+    if (!period || !isFinite(val)) continue;
+    const rows = out.get(tag) || [];
+    rows.push({ ...period, val });
+    out.set(tag, rows);
+  }
+  return out;
+}
+
+async function deepBackfill() {
+  const cutoff = Date.now() - 100 * 86400000; // a quarter's data should not be this old
+  const behind = [];
+  for (const co of companies) {
+    try {
+      const d = await readJSON(`data/fundamentals/${co.t.replace(/\./g, '-')}.json`);
+      const last = (d.quarterly?.revenue || []).at(-1)?.end;
+      if (!last || Date.parse(last) < cutoff) behind.push(co);
+    } catch { /* nothing written for this one */ }
+  }
+  if (!behind.length) return console.log('deep backfill: nothing behind');
+  let filled = 0;
+  await pool(behind, async (co) => {
+    const sub = await fetchJSON(`https://data.sec.gov/submissions/CIK${co.cik}.json`);
+    if (!sub.ok) return;
+    const r = sub.data.filings.recent;
+    // Read the two most recent periodic filings: the newest alone can be a 10-K,
+    // which carries the full year but no separate fourth quarter (Cardinal
+    // Health), so the preceding 10-Q is what closes the gap.
+    const idxs = r.form.map((f, i) => (f === '10-Q' || f === '10-K' ? i : -1)).filter((i) => i >= 0).slice(0, 2);
+    if (!idxs.length) return;
+    const cikNum = parseInt(co.cik, 10);
+    let got = 0;
+    for (const i of idxs) {
+      const acc = r.accessionNumber[i].replace(/-/g, '');
+      const stem = (r.primaryDocument[i] || '').replace(/\.htm$/, '');
+      if (!stem) continue;
+      const xml = await fetchText(`https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${stem}_htm.xml`);
+      if (!xml.ok) continue;
+      const facts = parseInstance(xml.text);
+      if (!facts.size) continue;
+      for (const [tag, rows] of facts) {
+        let m = FRAMES.get(tag);
+        if (!m) FRAMES.set(tag, (m = new Map()));
+        m.set(cikNum, [...(m.get(cikNum) || []), ...rows]);
+      }
+      got++;
+    }
+    if (!got) return;
+    await buildCompany(co); // rebuild with the filings' facts merged in
+    filled++;
+  }, { concurrency: 2, spacingMs: 300, label: 'deep' });
+  console.log(`deep backfill: ${filled}/${behind.length} rebuilt from filings`);
+}
+
+await deepBackfill();
+
 if (ok < companies.length * 0.7) process.exit(1);

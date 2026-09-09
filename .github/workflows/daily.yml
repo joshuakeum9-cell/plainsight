@@ -16,6 +16,9 @@ permissions:
 jobs:
   nightly:
     runs-on: ubuntu-latest
+    # The fundamentals step now makes three passes (companyfacts, frames, and
+    # reading filings directly for stragglers), so give it room.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,6 +30,7 @@ jobs:
         run: node scripts/refresh-history.mjs
       - name: Refresh fundamentals from EDGAR
         run: node scripts/refresh-fundamentals.mjs
+        timeout-minutes: 60
       - name: Refresh quotes
         run: node scripts/refresh-quotes.mjs
       - name: Commit & push

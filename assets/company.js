@@ -138,10 +138,13 @@
   const A = f.annual, Q = f.quarterly || {}, BQ = f.balancesQ || {};
   const seg = await PS.segments(t);
   const grid = document.getElementById('fundCharts');
+  // Subtitles are composed from short clauses; render them as sentences.
+  const sentence = (sub) => sub.split(' · ').map((x) => x.trim()).filter(Boolean)
+    .map((x) => x[0].toUpperCase() + x.slice(1)).join('. ') + '.';
   const card = (title, sub, wide) => {
     const div = document.createElement('div');
     div.className = 'chart-card' + (wide ? ' wide' : '');
-    div.innerHTML = `<h3>${title}</h3>${sub ? `<p class="chart-sub">${sub}</p>` : ''}<div class="chart-box"></div>`;
+    div.innerHTML = `<h3>${title}</h3>${sub ? `<p class="chart-sub">${sentence(sub)}</p>` : ''}<div class="chart-box"></div>`;
     grid.appendChild(div);
     return div.querySelector('.chart-box');
   };
@@ -195,7 +198,7 @@
     const labels = base.map(labelOf);
     const flags = base.map((r) => (r.d ? '(derived)' : ''));
     const lag = isQ ? 4 : 1;
-    const growthNote = isQ ? '% vs. the same quarter a year ago' : '% vs. prior year';
+    const growthNote = isQ ? 'growth vs. the same quarter a year ago' : 'growth vs. prior year';
     // A fiscal year can be up to ~12 months stale (Apple's FY2026 does not close
     // until late September), so the annual view appends a trailing-twelve-month
     // bar. Skipped when the newest quarter IS the fiscal year end, where it
@@ -245,7 +248,7 @@
       // left with empty years, and the subtitle says when that is.
       const firstIdx = base.findIndex((b) => segByEnd.has(b.end));
       const segBase = base.slice(firstIdx);
-      const since = firstIdx > 0 ? ` · reported from ${labelOf(segBase[0])}; earlier filings did not split revenue` : '';
+      const since = firstIdx > 0 ? ` · reported from ${labelOf(segBase[0])}, earlier filings did not split revenue` : '';
       grouped('Revenue by segment', `${AXIS_NAME[seg.axis] || 'as reported'} · from the 10-K${isQ ? ' and 10-Qs' : ''}${since}`,
         seg.members.map((m, i) => ({ name: m.label, color: PALETTE[i % PALETTE.length], values: segBase.map((b) => segByEnd.get(b.end)?.values[m.id] ?? null) })),
         { stacked: true, labels: segBase.map(labelOf), flags: segBase.map((b) => (segByEnd.get(b.end)?.d ? '(derived)' : '')) });

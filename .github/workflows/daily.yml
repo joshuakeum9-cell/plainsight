@@ -34,6 +34,9 @@ jobs:
       - name: Refresh revenue by segment (only companies with new filings)
         run: node scripts/refresh-segments.mjs
         timeout-minutes: 90
+        # Segment reads are heavy; a slow night must not cost the quotes and
+        # fundamentals refresh, so this step may fail without failing the job.
+        continue-on-error: true
       - name: Refresh quotes
         run: node scripts/refresh-quotes.mjs
       - name: Commit & push

@@ -21,6 +21,7 @@ const FLOW_CONCEPTS = {
   ocf: ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'],
   capex: ['PaymentsToAcquirePropertyPlantAndEquipment', 'PaymentsToAcquireProductiveAssets'],
   buybacks: ['PaymentsForRepurchaseOfCommonStock'],
+  da: ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'DepreciationAmortizationAndAccretionNet', 'Depreciation'],
   dividendsPaid: ['PaymentsOfDividendsCommonStock', 'PaymentsOfDividends'],
 };
 // Filers that never report a single "total revenue" line: banks state net
@@ -45,6 +46,7 @@ const INSTANT_CONCEPTS = {
   equity: ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
   cash: ['CashAndCashEquivalentsAtCarryingValue', 'CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents'],
   ltDebt: ['LongTermDebtNoncurrent', 'LongTermDebt'],
+  debtCurrent: ['LongTermDebtCurrent', 'DebtCurrent', 'ShortTermBorrowings'],
 };
 
 // ---- recent-period backfill from EDGAR's frames endpoint ----
@@ -169,7 +171,7 @@ const toAnnual = (rows) => {
   for (const r of rows) byEndYear.set(r.end.slice(0, 4), r); // later end dates win within a year label
   return [...byEndYear.values()].map((r) => ({ end: r.end, v: r.val })).slice(-11);
 };
-const toQuarter = (rows) => rows.slice(-20).map((r) => ({ end: r.end, v: r.val }));
+const toQuarter = (rows) => rows.slice(-48).map((r) => ({ end: r.end, v: r.val }));
 
 function annualSeries(gaap, tags, cik, pickMax) {
   return toAnnual(collect(gaap, tags, isAnnualSpan, cik, pickMax));
@@ -215,7 +217,34 @@ function instantAnnual(gaap, tags) {
   const annual = all.filter((r) => r.hasK);
   const series = (annual.length >= 3 ? annual : all).slice(-11).map((r) => ({ end: r.end, v: r.val }));
   const latest = all.at(-1) || null;
-  return { series, latest: latest ? { end: latest.end, v: latest.val } : null, byEnd: new Map(all.map((r) => [r.end, r.val])) };
+  return { series, latest: latest ? { end: latest.end, v: latest.val } : null, byEnd: new Map(all.map((r) => [r.end, r.val])),
+    quarterly: all.slice(-44).map((r) => ({ end: r.end, v: r.val })) };
+}
+
+// Cash-flow statements in 10-Qs are year-to-date, so a company reports 3, 6, 9
+// and 12 months from the same fiscal-year start rather than discrete quarters.
+// Difference each such chain: Q2 = 6mo - 3mo, Q3 = 9mo - 6mo, Q4 = FY - 9mo.
+// Marked d:1 like a derived Q4. Discrete quarters, where filed, win on merge.
+function ytdQuarters(gaap, tags, cik) {
+  const spanOk = (u) => u.start && u.end && (() => { const d = (Date.parse(u.end) - Date.parse(u.start)) / 86400000; return d > 60 && d < 400; })();
+  const byStart = new Map();
+  for (const r of collect(gaap, tags, spanOk, cik)) {
+    if (!byStart.has(r.start)) byStart.set(r.start, []);
+    byStart.get(r.start).push(r);
+  }
+  const out = [];
+  for (const chain of byStart.values()) {
+    chain.sort((a, b) => a.end.localeCompare(b.end));
+    for (let i = 1; i < chain.length; i++) {
+      const gap = (Date.parse(chain[i].end) - Date.parse(chain[i - 1].end)) / 86400000;
+      if (gap > 60 && gap < 125) out.push({ end: chain[i].end, v: chain[i].val - chain[i - 1].val, d: 1 });
+    }
+  }
+  return out;
+}
+function mergeQuarters(discrete, derived) {
+  const have = new Set(discrete.map((q) => q.end));
+  return [...discrete, ...derived.filter((q) => !have.has(q.end))].sort((a, b) => a.end.localeCompare(b.end)).slice(-44);
 }
 
 // Derive Q4 = FY - (Q1+Q2+Q3) for flow concepts, then build a full quarter list.
@@ -232,7 +261,7 @@ function withDerivedQ4(quarters, annuals) {
       out.push({ end: a.end, v: a.v - inYear.reduce((s, q) => s + q.v, 0), d: 1 });
     }
   }
-  return out.sort((a, b) => a.end.localeCompare(b.end)).slice(-17);
+  return out.sort((a, b) => a.end.localeCompare(b.end)).slice(-44);
 }
 
 // Some filers tag a full-year figure with a quarter-length period: L3Harris put
@@ -315,7 +344,7 @@ async function buildCompany(co) {
       const isRev = name === 'revenue';
       const fixed = reclassifyMistaggedAnnual(annualSeries(gaap, tags, cikNum, isRev), quarterSeries(gaap, tags, cikNum, isRev));
       annual[name] = fixed.annual;
-      quarterly[name] = withDerivedQ4(fixed.quarterly, fixed.annual);
+      quarterly[name] = withDerivedQ4(mergeQuarters(fixed.quarterly, ytdQuarters(gaap, tags, cikNum)), fixed.annual);
     }
     // Banks and split-revenue utilities: prefer the summed definition when the
     // single-tag chain came up empty, short, stale, or landed on a fragment tag
@@ -476,11 +505,9 @@ async function buildCompany(co) {
       cik: co.cik,
       profile,
       annual,
-      quarterly: {
-        revenue: quarterly.revenue, netIncome: quarterly.netIncome,
-        eps: quarterly.eps, opIncome: quarterly.opIncome, ocf: quarterly.ocf,
-      },
+      quarterly,
       balances: Object.fromEntries(Object.entries(balances).map(([k, v]) => [k, v.series])),
+      balancesQ: Object.fromEntries(Object.entries(balances).map(([k, v]) => [k, v.quarterly])),
       dilutedShares,
       sharesLatest,
       latestBalance,

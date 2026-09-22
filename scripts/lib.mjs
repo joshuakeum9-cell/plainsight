@@ -22,14 +22,41 @@ export async function fetchJSON(url, { headers = {}, retries = 3, backoff = 1200
   return { ok: false, error: String(lastErr) };
 }
 
+// Large documents (multi-MB XBRL instances from the Archives) go through
+// node:https rather than fetch: Node 24's undici trips an internal assertion
+// (`assert(!this.paused)`) on some big streamed bodies and takes the whole
+// process down with it, which is not something a try/catch can see.
+import https from 'node:https';
+import { gunzipSync } from 'node:zlib';
+function httpsText(url, headers) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'User-Agent': UA, 'Accept-Encoding': 'gzip', ...headers } }, (res) => {
+      if ([301, 302, 307, 308].includes(res.statusCode) && res.headers.location) {
+        res.resume();
+        return httpsText(new URL(res.headers.location, url).href, headers).then(resolve, reject);
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        let buf = Buffer.concat(chunks);
+        if (res.headers['content-encoding'] === 'gzip') { try { buf = gunzipSync(buf); } catch (e) { return reject(e); } }
+        resolve({ status: res.statusCode, text: buf.toString('utf8') });
+      });
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(120000, () => req.destroy(new Error('timeout')));
+  });
+}
+
 export async function fetchText(url, { headers = {}, retries = 3, backoff = 1200 } = {}) {
   let lastErr;
   for (let i = 0; i <= retries; i++) {
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': UA, ...headers } });
+      const r = await httpsText(url, headers);
       if (r.status === 429 || r.status >= 500) throw new Error(`HTTP ${r.status}`);
-      if (!r.ok) return { ok: false, status: r.status };
-      return { ok: true, status: r.status, text: await r.text() };
+      if (r.status < 200 || r.status >= 300) return { ok: false, status: r.status };
+      return { ok: true, status: r.status, text: r.text };
     } catch (e) {
       lastErr = e;
       if (i < retries) await sleep(backoff * (i + 1) + Math.random() * 400);

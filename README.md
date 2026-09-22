@@ -12,7 +12,7 @@ Plainsight turns official SEC filings and live market data into clean one-page c
 |---|---|
 | `index.html` | Marketing landing page (live index chips, ticker tape, real AAPL mini-report) |
 | `app.html` | The terminal: indices, top movers, sector performance, full sortable 503-company screener |
-| `company.html?t=TICKER` | The report: live price + chart, valuation metrics, 10 years of fundamentals, recent quarters, profile |
+| `company.html?t=TICKER` | The report: live price + chart, valuation metrics, 17 fundamentals charts (ten years, quarterly or annual, including revenue by segment), profile |
 
 ## How the data works (all free, no API keys)
 
@@ -23,7 +23,7 @@ Plainsight turns official SEC filings and live market data into clean one-page c
 Two GitHub Actions keep it live:
 
 - `.github/workflows/quotes.yml` — refreshes `data/quotes.json` and the intraday series (1D/5D, on the single-commit `data-intraday` branch) every 15 minutes during US market hours.
-- `.github/workflows/daily.yml` — nightly refresh of the universe, per-ticker price history, and EDGAR fundamentals.
+- `.github/workflows/daily.yml` — nightly refresh of the universe, per-ticker price history, EDGAR fundamentals, and revenue by segment (only for companies with a new filing).
 
 Each run commits the updated JSON to `data/`, and GitHub Pages redeploys automatically. Every page shows its "last updated" stamp.
 
@@ -34,6 +34,7 @@ node scripts/build-universe.mjs        # S&P 500 list -> data/universe.json
 node scripts/refresh-quotes.mjs        # all quotes + indices -> data/quotes.json
 node scripts/refresh-history.mjs       # 1y daily + 10y monthly candles -> data/history/*.json
 node scripts/refresh-fundamentals.mjs  # EDGAR facts + ratios -> data/fundamentals/*.json
+node scripts/refresh-segments.mjs      # revenue by segment, read from each filing's XBRL -> data/segments/*.json
 ```
 
 No dependencies — plain Node 18+ (`fetch` built in). `ONLY=AAPL,MSFT` or `LIMIT=25` narrow the fundamentals run for testing.
@@ -50,7 +51,8 @@ Then open http://localhost:8140.
 
 - Quotes can be up to ~15 minutes old plus CDN cache (the refresh cadence); the stamp on every page tells you exactly.
 - TTM cash-flow metrics use YTD arithmetic (last FY + current YTD − prior-year YTD) because 10-Q cash flow statements are cumulative.
-- Q4 values are derived (FY minus the three reported quarters) and flagged in tooltips.
+- Q4 values are derived (FY minus the three reported quarters) and flagged in tooltips. Cash-flow lines are cumulative inside a 10-Q, so their quarters are differenced from the year-to-date chain (also flagged).
+- Revenue by segment comes from the filings' own XBRL because neither SEC API carries dimensional facts. Coverage is the latest 10-K plus the last four 10-Qs (about eight quarters); companies that don't break revenue down simply don't get the chart.
 - Multi-class share structures with unequal classes (e.g. BRK.B) get per-share metrics suppressed rather than shown wrong.
 - Banks and insurers report cash flow differently; some metrics are legitimately "—" for them.
 - This is an informational tool, not investment advice.

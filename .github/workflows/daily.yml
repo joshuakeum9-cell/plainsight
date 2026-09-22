@@ -31,6 +31,9 @@ jobs:
       - name: Refresh fundamentals from EDGAR
         run: node scripts/refresh-fundamentals.mjs
         timeout-minutes: 60
+      - name: Refresh revenue by segment (only companies with new filings)
+        run: node scripts/refresh-segments.mjs
+        timeout-minutes: 90
       - name: Refresh quotes
         run: node scripts/refresh-quotes.mjs
       - name: Commit & push

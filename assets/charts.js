@@ -24,6 +24,10 @@
     return { lo, hi, ticks };
   }
 
+  // Draw at the card's real width so nothing is scaled down afterwards: a fixed
+  // 640-unit canvas squeezed into a 380px card shrank bars and labels to 60%.
+  const canvasWidth = (box) => Math.max(300, Math.round(box.clientWidth || box.parentElement?.clientWidth || 640));
+
   function makeTip(box) {
     let tip = box.querySelector('.chart-tip');
     if (!tip) {
@@ -74,7 +78,7 @@
   // opts: {labels, series:[{name,color,values}], fmt, height, area, fillGaps}
   function lineChart(box, opts) {
     box.innerHTML = '';
-    const W = 640, H = opts.height || 260, padL = 46, padR = 12, padT = 12, padB = 24;
+    const W = canvasWidth(box), H = opts.height || 260, padL = 46, padR = 12, padT = 12, padB = 24;
     const labels = opts.labels;
     const series = opts.series.filter((s) => s.values.some((v) => v != null));
     if (!series.length || labels.length < 2) { box.innerHTML = '<p class="body-sm" style="color:var(--muted)">Not enough data.</p>'; return; }
@@ -177,7 +181,7 @@
     // A TTM period overlaps the fiscal year before it, so a % against that year
     // would not be a like-for-like comparison. Leave it off.
     if (growth && opts.lastBarColor) growth[growth.length - 1] = null;
-    const W = 640, H = opts.height || 260, padL = 46, padR = 12, padT = growth ? 26 : 12, padB = 24;
+    const W = canvasWidth(box), H = opts.height || 260, padL = 46, padR = 12, padT = growth ? 26 : 12, padB = 24;
     const labels = opts.labels;
     const series = opts.series.filter((s) => s.values.some((v) => v != null));
     if (!series.length || !labels.length) { box.innerHTML = '<p class="body-sm" style="color:var(--muted)">Not enough data.</p>'; return; }
@@ -267,10 +271,13 @@
       });
     }
 
-    // x labels: sparse (max ~8)
+    // x labels: sparse (max ~8). The last label is always drawn, so a sampled
+    // label that would land within most of a stride of it is dropped rather
+    // than overprinted ("Q1 '26" and "Q2 '26" colliding at the right edge).
     const every = Math.ceil(labels.length / 8);
+    const last = labels.length - 1;
     for (let i = 0; i < labels.length; i++) {
-      if (i % every && i !== labels.length - 1) continue;
+      if (i !== last && (i % every || (last - i) < every * 0.6)) continue;
       const txt = el('text', { x: padL + slot * i + slot / 2, y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--muted)' });
       txt.textContent = labels[i];
       svg.appendChild(txt);

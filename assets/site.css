@@ -186,13 +186,13 @@ table.data th.num { text-align: right; }
 .chart-tip .tl { font-weight: 600; color: var(--ink); margin-bottom: 2px; }
 .chart-tip .row { display: flex; align-items: center; gap: 6px; color: var(--body); font-variant-numeric: tabular-nums; }
 .chart-tip .row .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
-details.data-table { margin-top: var(--sp-sm); }
+details.data-table { margin-top: var(--sp-sm); max-width: 100%; overflow-x: auto; }
 details.data-table summary { font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; }
 details.data-table table { margin-top: 8px; }
 details.data-table td, details.data-table th { padding: 6px 10px; font-size: 13px; }
 
 /* range tabs */
-.range-tabs { display: flex; gap: 4px; }
+.range-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .range-tabs button { font-family: var(--font); font-size: 13px; font-weight: 600; color: var(--muted);
   background: transparent; border: none; border-radius: var(--r-pill); padding: 6px 12px; cursor: pointer; }
 .range-tabs button.active { background: var(--surface-card); color: var(--ink); }

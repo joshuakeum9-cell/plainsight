@@ -134,19 +134,19 @@
 
   document.getElementById('fStamp').textContent = `updated ${PS.fmtUpdated(f.updated)}`;
 
-  // ---- annual fundamentals charts ----
-  const A = f.annual;
-  const grid = document.getElementById('annualCharts');
-  const card = (title, sub) => {
+  // ---- fundamentals: one chart per metric, quarterly or annual ----
+  const A = f.annual, Q = f.quarterly || {}, BQ = f.balancesQ || {};
+  const seg = await PS.segments(t);
+  const grid = document.getElementById('fundCharts');
+  const card = (title, sub, wide) => {
     const div = document.createElement('div');
-    div.className = 'chart-card';
+    div.className = 'chart-card' + (wide ? ' wide' : '');
     div.innerHTML = `<h3>${title}</h3>${sub ? `<p class="chart-sub">${sub}</p>` : ''}<div class="chart-box"></div>`;
     grid.appendChild(div);
     return div.querySelector('.chart-box');
   };
   const align = (series, base) => base.map((b) => series.find((r) => r.end === b.end)?.v ?? null);
-  const years = A.revenue.slice(-10);
-  const yl = years.map((r) => PS.fyLabel(r.end));
+  const some = (vals) => vals.some((v) => v != null);
 
   // Per-share figures sit on mixed bases: a 10-K restates only its two
   // comparative years, so anything older keeps the pre-split numbers (Apple's
@@ -176,151 +176,163 @@
     return out;
   }
   const sharesByEnd = new Map((f.dilutedShares || []).map((r) => [r.end, r.v]));
-
-  // A fiscal year can be up to ~12 months stale (Apple's FY2026 doesn't close
-  // until late September), so append a trailing-twelve-month bar covering the
-  // four most recent reported quarters. Skipped when the latest quarter IS the
-  // fiscal year end, where TTM would just duplicate the final bar.
-  const lastQEnd = (f.quarterly?.revenue || []).at(-1)?.end;
-  const lastFYEnd = years.at(-1)?.end;
-  const ttmOn = lastQEnd && lastFYEnd && Date.parse(lastQEnd) - Date.parse(lastFYEnd) > 45 * 86400000;
-  const ttmNote = ttmOn ? `TTM = 12 months to ${PS.qLabel(lastQEnd)}` : '';
-  const withTTM = (labels, values, ttmValue) => (ttmOn && ttmValue != null
-    ? { labels: [...labels, 'TTM'], values: [...values, ttmValue], lastBarColor: 'var(--chart-5)', lastBarNote: ttmNote }
-    : { labels, values });
-  const ttmSub = ttmOn ? ' · final bar is trailing 12 months' : '';
-  // Balance sheets and share counts are snapshots, not flows, so "current" for
-  // them is the newest quarter end rather than a trailing window.
+  const shareEnds = (f.dilutedShares || []).map((r) => r.end);
+  const shareFactors = splitFactors(shareEnds, sharesByEnd);
+  // A quarter takes the factor of the fiscal year it falls in.
+  const factorAt = (end) => { const i = shareEnds.findIndex((e) => e >= end); return i < 0 ? 1 : shareFactors[i]; };
   const newerThan = (end, base) => end && base && Date.parse(end) - Date.parse(base) > 45 * 86400000;
+  const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)',
+    'var(--brand-peach)', 'var(--brand-lavender)', 'var(--brand-coral)', 'var(--brand-ochre)'];
+  const AXIS_NAME = { 'srt:ProductOrServiceAxis': 'by product and service', 'us-gaap:StatementBusinessSegmentsAxis': 'by business segment', 'srt:StatementGeographicalAxis': 'by geography' };
 
-  if (years.length >= 2) {
-    const rev = withTTM(yl, years.map((r) => r.v), s.revTTM);
-    PSCharts.barChart(card('Revenue', 'total annual revenue · % is growth vs. prior year' + ttmSub), {
-      labels: rev.labels, series: [{ name: 'Revenue', color: 'var(--chart-1)', values: rev.values }],
-      fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
-      lastBarColor: rev.lastBarColor, lastBarNote: rev.lastBarNote,
-    });
-    const ni = withTTM(yl, align(A.netIncome, years), s.niTTM);
-    PSCharts.barChart(card('Net income', 'profit after all expenses and tax · % vs. prior year' + ttmSub), {
-      labels: ni.labels, series: [{ name: 'Net income', color: 'var(--chart-2)', values: ni.values }],
-      fmt: PS.fmtMoney, negativeColor: 'var(--down)', growthLag: 1,
-      lastBarColor: ni.lastBarColor, lastBarNote: ni.lastBarNote,
-    });
-    // margins
-    const gm = years.map((r, i) => { const g = align(A.grossProfit, years)[i]; return g != null && r.v ? (g / r.v) * 100 : null; });
-    const om = years.map((r, i) => { const o = align(A.opIncome, years)[i]; return o != null && r.v ? (o / r.v) * 100 : null; });
-    const nm = years.map((r, i) => { const n = align(A.netIncome, years)[i]; return n != null && r.v ? (n / r.v) * 100 : null; });
-    PSCharts.lineChart(card('Margins', 'profitability as % of revenue'), {
-      labels: yl,
-      series: [
-        { name: 'Gross', color: 'var(--chart-1)', values: gm },
-        { name: 'Operating', color: 'var(--chart-2)', values: om },
-        { name: 'Net', color: 'var(--chart-3)', values: nm },
-      ].filter((sr) => sr.values.some((v) => v != null)),
-      fmt: (v) => PS.fmtPct(v), fillGaps: true,
-    });
-    if (!unreliable && A.eps.length >= 2) {
-      const e = A.eps.slice(-10);
-      const ef = splitFactors(e.map((r) => r.end), sharesByEnd);
-      const eVals = e.map((r, i) => (r.v == null ? null : r.v / ef[i]));
-      const eps = withTTM(e.map((r) => PS.fyLabel(r.end)), eVals, s.epsTTM);
-      PSCharts.barChart(card('EPS (diluted)', 'earnings per share · % vs. prior year' + ttmSub), {
-        labels: eps.labels,
-        series: [{ name: 'EPS', color: 'var(--chart-4)', values: eps.values }],
-        fmt: (v) => '$' + (v == null ? '-' : v.toFixed(2)), negativeColor: 'var(--down)', growthLag: 1,
-        lastBarColor: eps.lastBarColor, lastBarNote: eps.lastBarNote,
+  function render(period) {
+    grid.innerHTML = '';
+    const isQ = period === 'Q';
+    const src = isQ ? Q : A;
+    const base = (src.revenue || []).slice(isQ ? -44 : -10);
+    if (base.length < 2) { grid.innerHTML = '<p class="body-md" style="color:var(--muted)">Not enough filed history for this view.</p>'; return; }
+    const labelOf = (r) => (isQ ? PS.qLabel(r.end) : PS.fyLabel(r.end));
+    const labels = base.map(labelOf);
+    const flags = base.map((r) => (r.d ? '(derived)' : ''));
+    const lag = isQ ? 4 : 1;
+    const growthNote = isQ ? '% vs. the same quarter a year ago' : '% vs. prior year';
+    // A fiscal year can be up to ~12 months stale (Apple's FY2026 does not close
+    // until late September), so the annual view appends a trailing-twelve-month
+    // bar. Skipped when the newest quarter IS the fiscal year end, where it
+    // would only duplicate the final bar, and never drawn in the quarterly view.
+    const lastQEnd = (Q.revenue || []).at(-1)?.end, lastFYEnd = base.at(-1)?.end;
+    const ttmOn = !isQ && newerThan(lastQEnd, lastFYEnd);
+    const ttmNote = ttmOn ? `TTM = 12 months to ${PS.qLabel(lastQEnd)}` : '';
+    const H = 250;
+
+    const bar = (title, sub, values, color, o = {}) => {
+      if (!some(values)) return;
+      const useTTM = ttmOn && o.ttm != null;
+      PSCharts.barChart(card(title, sub + (useTTM ? ' · final bar is trailing 12 months' : '')), {
+        labels: useTTM ? [...labels, 'TTM'] : labels,
+        series: [{ name: title, color, values: useTTM ? [...values, o.ttm] : values }],
+        fmt: o.fmt || PS.fmtMoney, negativeColor: 'var(--down)', growthLag: o.growth === false ? 0 : lag,
+        flags, height: H,
+        lastBarColor: useTTM ? 'var(--chart-5)' : undefined, lastBarNote: useTTM ? ttmNote : undefined,
       });
+    };
+    const grouped = (title, sub, series, o = {}) => {
+      const live = series.filter((sr) => some(sr.values));
+      if (!live.length) return;
+      PSCharts.barChart(card(title, sub), { labels: o.labels || labels, series: live, fmt: PS.fmtMoney, height: H, stacked: !!o.stacked, flags: o.flags || flags });
+    };
+
+    // 1. revenue
+    const rev = base.map((r) => r.v);
+    bar('Revenue', 'total revenue · ' + growthNote, rev, 'var(--chart-1)', { ttm: s.revTTM });
+
+    // 2. revenue by segment, straight from the filings' XBRL
+    // Same timeline as the Revenue chart, period for period; a quarter the
+    // filings have not broken down yet is simply an empty slot.
+    const segByEnd = new Map(((seg && seg.members?.length >= 2 ? (isQ ? seg.quarterly : seg.annual) : null) || []).map((r) => [r.end, r]));
+    if (segByEnd.size >= (isQ ? 4 : 2)) {
+      grouped('Revenue by segment', `${AXIS_NAME[seg.axis] || 'as reported'} · from the 10-K${isQ ? ' and 10-Qs' : ''}`,
+        seg.members.map((m, i) => ({ name: m.label, color: PALETTE[i % PALETTE.length], values: base.map((b) => segByEnd.get(b.end)?.values[m.id] ?? null) })),
+        { stacked: true, flags: base.map((b) => (segByEnd.get(b.end)?.d ? '(derived)' : '')) });
     }
-    // cash flow
-    const ocf = align(A.ocf, years), capex = align(A.capex, years);
-    const fcf = years.map((_, i) => (ocf[i] != null && capex[i] != null ? ocf[i] - capex[i] : null));
-    const cfTTM = ttmOn && s.ocfTTM != null;
-    PSCharts.barChart(card('Cash flow', 'operating cash flow, capex, and free cash flow' + (cfTTM ? ttmSub : '')), {
-      labels: cfTTM ? [...yl, 'TTM'] : yl,
-      series: [
-        { name: 'Operating CF', color: 'var(--chart-1)', values: cfTTM ? [...ocf, s.ocfTTM] : ocf },
-        { name: 'Capex', color: 'var(--chart-2)', values: (cfTTM ? [...capex, s.capexTTM] : capex).map((v) => (v == null ? null : -v)) },
-        { name: 'Free CF', color: 'var(--chart-4)', values: cfTTM ? [...fcf, s.fcfTTM] : fcf },
-      ].filter((sr) => sr.values.some((v) => v != null)),
-      fmt: PS.fmtMoney,
+
+    // 3. profitability
+    const gp = align(src.grossProfit || [], base);
+    bar('Gross profit', 'revenue minus cost of revenue · ' + growthNote, gp, 'var(--chart-2)');
+    const op = align(src.opIncome || [], base);
+    bar('Operating income', 'profit from operations, before interest and tax · ' + growthNote, op, 'var(--chart-4)');
+    const da = align(src.da || [], base);
+    const ebitda = base.map((_, i) => (op[i] != null && da[i] != null ? op[i] + da[i] : null));
+    if (ebitda.filter((v) => v != null).length >= base.length / 2) bar('EBITDA', 'operating income plus depreciation and amortization · ' + growthNote, ebitda, 'var(--chart-2)');
+    const ni = align(src.netIncome || [], base);
+    bar('Net income', 'profit after all expenses and tax · ' + growthNote, ni, 'var(--chart-2)', { ttm: s.niTTM });
+    const pct = (num) => base.map((r, i) => (num[i] != null && r.v ? (num[i] / r.v) * 100 : null));
+    const margins = [
+      { name: 'Gross', color: 'var(--chart-1)', values: pct(gp) },
+      { name: 'Operating', color: 'var(--chart-2)', values: pct(op) },
+      { name: 'Net', color: 'var(--chart-3)', values: pct(ni) },
+    ].filter((sr) => some(sr.values));
+    if (margins.length) PSCharts.lineChart(card('Margins', 'gross, operating and net profit as % of revenue'), { labels, series: margins, fmt: (v) => PS.fmtPct(v), fillGaps: true, height: H });
+
+    // 4. per share
+    if (!unreliable) {
+      const eps = align(src.eps || [], base).map((v, i) => (v == null ? null : v / factorAt(base[i].end)));
+      bar('EPS (diluted)', 'earnings per share, split-adjusted · ' + growthNote, eps, 'var(--chart-4)', { ttm: s.epsTTM, fmt: (v) => '$' + (v == null ? '-' : v.toFixed(2)) });
+    }
+    const dps = align(src.divPS || [], base).map((v, i) => (v == null ? null : v / factorAt(base[i].end)));
+    bar('Dividends per share', 'declared per share, split-adjusted', dps, 'var(--chart-3)', { growth: false, fmt: (v) => '$' + (v == null ? '-' : v.toFixed(2)) });
+
+    // 5. cash flow
+    const ocf = align(src.ocf || [], base), capex = align(src.capex || [], base);
+    bar('Cash from operations', 'net cash generated by the business · ' + growthNote, ocf, 'var(--chart-1)', { ttm: s.ocfTTM });
+    bar('Capital expenditure', 'cash spent on property, plant and equipment', capex.map((v) => (v == null ? null : -v)), 'var(--chart-2)', { growth: false, ttm: s.capexTTM != null ? -s.capexTTM : null });
+    const fcf = base.map((_, i) => (ocf[i] != null && capex[i] != null ? ocf[i] - capex[i] : null));
+    bar('Free cash flow', 'cash from operations minus capital expenditure · ' + growthNote, fcf, 'var(--chart-4)', { ttm: s.fcfTTM });
+
+    // 6. balance sheet at each period end
+    const B = isQ ? BQ : f.balances;
+    const cash = align(B.cash || [], base);
+    const debt = base.map((r, i) => {
+      const lt = (B.ltDebt || []).find((x) => x.end === r.end)?.v, cur = (B.debtCurrent || []).find((x) => x.end === r.end)?.v;
+      return lt == null && cur == null ? null : (lt || 0) + (cur || 0);
     });
-    // balance sheet
-    const B = f.balances;
-    const bl = (B.assets || []).slice(-10);
-    if (bl.length >= 2) {
-      const lb = f.latestBalance;
-      const bsNow = lb && newerThan(lb.end, bl.at(-1).end) && lb.assets != null;
-      const bYl = bl.map((r) => PS.fyLabel(r.end));
-      PSCharts.barChart(card('Balance sheet', 'assets vs. liabilities vs. equity at fiscal year end'
-        + (bsNow ? ` · final column is the latest quarter (${PS.qLabel(lb.end)})` : '')), {
-        labels: bsNow ? [...bYl, PS.qLabel(lb.end)] : bYl,
-        series: [
-          { name: 'Assets', color: 'var(--chart-1)', values: bsNow ? [...bl.map((r) => r.v), lb.assets] : bl.map((r) => r.v) },
-          { name: 'Liabilities', color: 'var(--chart-2)', values: bsNow ? [...align(B.liabilities || [], bl), lb.liabilities] : align(B.liabilities || [], bl) },
-          { name: 'Equity', color: 'var(--chart-4)', values: bsNow ? [...align(B.equity || [], bl), lb.equity] : align(B.equity || [], bl) },
-        ].filter((sr) => sr.values.some((v) => v != null)),
-        fmt: PS.fmtMoney,
-      });
+    grouped('Cash and debt', 'cash and equivalents against total borrowings', [
+      { name: 'Cash', color: 'var(--chart-1)', values: cash },
+      { name: 'Debt', color: 'var(--chart-2)', values: debt },
+    ]);
+    const bl = isQ ? base : (B.assets || []).slice(-10);
+    const lb = f.latestBalance;
+    const bsNow = !isQ && lb && newerThan(lb.end, bl.at(-1)?.end) && lb.assets != null;
+    const bsLabels = bl.map(labelOf).concat(bsNow ? [PS.qLabel(lb.end)] : []);
+    grouped('Balance sheet', 'assets vs. liabilities vs. equity' + (bsNow ? ` · final column is the latest quarter (${PS.qLabel(lb.end)})` : ''), [
+      { name: 'Assets', color: 'var(--chart-1)', values: align(B.assets || [], bl).concat(bsNow ? [lb.assets] : []) },
+      { name: 'Liabilities', color: 'var(--chart-2)', values: align(B.liabilities || [], bl).concat(bsNow ? [lb.liabilities] : []) },
+      { name: 'Equity', color: 'var(--chart-4)', values: align(B.equity || [], bl).concat(bsNow ? [lb.equity] : []) },
+    ], { labels: bsLabels, flags: bsLabels.map(() => '') });
+
+    // 7. shareholders
+    const bb = align(src.buybacks || [], base), dv = align(src.dividendsPaid || [], base);
+    if (some(bb) || some(dv)) {
+      const crTTM = ttmOn && (s.buybacksTTM != null || s.dividendsTTM != null);
+      grouped('Capital returned', 'cash spent on buybacks and dividends' + (crTTM ? ' · final bar is trailing 12 months' : ''), [
+        { name: 'Buybacks', color: 'var(--chart-1)', values: crTTM ? [...bb, s.buybacksTTM] : bb },
+        { name: 'Dividends', color: 'var(--chart-3)', values: crTTM ? [...dv, s.dividendsTTM] : dv },
+      ], { stacked: true, labels: crTTM ? [...labels, 'TTM'] : labels });
     }
-    // shares outstanding
     if (f.dilutedShares?.length >= 3) {
       const sh = f.dilutedShares.slice(-10);
       const sf = splitFactors(sh.map((r) => r.end), sharesByEnd);
       const ls = f.latestShares;
       const shNow = ls && newerThan(ls.end, sh.at(-1).end) && ls.v != null;
       const shVals = sh.map((r, i) => (r.v == null ? null : r.v * sf[i]));
-      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average, split-adjusted; falling means buybacks are shrinking the float'
-        + (shNow ? ` · to ${PS.qLabel(ls.end)}` : '')), {
+      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average by fiscal year, split-adjusted; falling means buybacks are shrinking the float' + (shNow ? ` · to ${PS.qLabel(ls.end)}` : '')), {
         labels: shNow ? [...sh.map((r) => PS.fyLabel(r.end)), PS.qLabel(ls.end)] : sh.map((r) => PS.fyLabel(r.end)),
         series: [{ name: 'Shares', color: 'var(--chart-1)', values: shNow ? [...shVals, ls.v] : shVals }],
-        fmt: (v, tick) => PS.fmtNum(v, tick),
+        fmt: (v, tick) => PS.fmtNum(v, tick), height: H,
       });
     }
-    // capital returns
-    const bb = align(A.buybacks, years), dv = align(A.dividendsPaid, years);
-    if (bb.some((v) => v) || dv.some((v) => v)) {
-      const crTTM = ttmOn && (s.buybacksTTM != null || s.dividendsTTM != null);
-      PSCharts.barChart(card('Capital returned', 'cash spent on buybacks and dividends' + (crTTM ? ttmSub : '')), {
-        labels: crTTM ? [...yl, 'TTM'] : yl,
-        series: [
-          { name: 'Buybacks', color: 'var(--chart-1)', values: crTTM ? [...bb, s.buybacksTTM] : bb },
-          { name: 'Dividends', color: 'var(--chart-3)', values: crTTM ? [...dv, s.dividendsTTM] : dv },
-        ].filter((sr) => sr.values.some((v) => v != null)),
-        stacked: true, fmt: PS.fmtMoney,
-      });
-    }
-  } else {
-    grid.innerHTML = '<p class="body-md" style="color:var(--muted)">Not enough filed history for annual charts.</p>';
+
+    // 8. operating expenses
+    grouped('Operating expenses', 'research and development, and selling, general and administrative', [
+      { name: 'R&D', color: 'var(--chart-4)', values: align(src.rnd || [], base) },
+      { name: 'SG&A', color: 'var(--chart-2)', values: align(src.sga || [], base) },
+    ], { stacked: true });
   }
 
-  // ---- quarterly ----
-  const Q = f.quarterly;
-  const qgrid = document.getElementById('quarterCharts');
-  const qcard = (title, sub) => {
-    const div = document.createElement('div');
-    div.className = 'chart-card';
-    div.innerHTML = `<h3>${title}</h3>${sub ? `<p class="chart-sub">${sub}</p>` : ''}<div class="chart-box"></div>`;
-    qgrid.appendChild(div);
-    return div.querySelector('.chart-box');
+  const tabs = document.getElementById('periodTabs');
+  const remember = (p) => { try { localStorage.setItem('ps-period', p); } catch { /* private mode */ } };
+  let period = 'Q';
+  try { period = localStorage.getItem('ps-period') || 'Q'; } catch { /* private mode */ }
+  const setPeriod = (p) => {
+    period = p; remember(p);
+    tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.p === p));
+    render(p);
   };
-  const qr = (Q.revenue || []).slice(-12);
-  if (qr.length >= 4) {
-    PSCharts.barChart(qcard('Quarterly revenue', '% is growth vs. the same quarter a year ago'), {
-      labels: qr.map((r) => PS.qLabel(r.end)),
-      series: [{ name: 'Revenue', color: 'var(--chart-1)', values: qr.map((r) => r.v) }],
-      fmt: PS.fmtMoney, flags: qr.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)', growthLag: 4,
-    });
-    const qn = (Q.netIncome || []).slice(-12);
-    if (qn.length >= 4) {
-      PSCharts.barChart(qcard('Quarterly net income', '% vs. the same quarter a year ago'), {
-        labels: qn.map((r) => PS.qLabel(r.end)),
-        series: [{ name: 'Net income', color: 'var(--chart-2)', values: qn.map((r) => r.v) }],
-        fmt: PS.fmtMoney, flags: qn.map((r) => (r.d ? '(derived Q4)' : '')), negativeColor: 'var(--down)', growthLag: 4,
-      });
-    }
-  } else {
-    qgrid.innerHTML = '<p class="body-md" style="color:var(--muted)">Quarterly data unavailable for this company.</p>';
-  }
+  tabs.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setPeriod(b.dataset.p); });
+  setPeriod(period);
+  // Charts are drawn at their card's width, so redraw when that changes.
+  let resizeTimer;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => render(period), 200); });
 
   // ---- profile ----
   const p = f.profile || {};

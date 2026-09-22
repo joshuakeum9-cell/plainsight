@@ -17,6 +17,9 @@
     quotes: () => load('data/quotes.json'),
     fundamentals: (t) => load(`data/fundamentals/${fileSym(t)}.json`),
     history: (t) => load(`data/history/${fileSym(t)}.json`),
+    // Revenue by segment is read from the filings themselves; not every
+    // company breaks revenue down, so a missing file is an answer, not an error.
+    segments: (t) => load(`data/segments/${fileSym(t)}.json`).catch(() => null),
     qKey,
 
     // ---- formatters ----

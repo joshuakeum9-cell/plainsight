@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=optional" rel="stylesheet">
-<link rel="stylesheet" href="assets/site.css?v=5">
+<link rel="stylesheet" href="assets/site.css?v=6">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%231a3a3a'/%3E%3Ccircle cx='16' cy='16' r='8.5' fill='%23fffaf0'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%231a3a3a'/%3E%3C/svg%3E">
 <style>
   .report-head { padding: 40px 0 24px; }
@@ -18,6 +18,14 @@
   .rh-price { font-size: 48px; font-weight: 500; letter-spacing: -1.5px; color: var(--ink); line-height: 1; font-variant-numeric: tabular-nums; }
   .stats-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: var(--sp-sm); }
   .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-lg); }
+  .period-toggle { display: inline-flex; padding: 3px; border: 1px solid var(--hairline); border-radius: var(--r-pill); background: var(--surface-soft); }
+  .period-toggle button { font-family: var(--font); font-size: 13px; font-weight: 600; color: var(--muted); background: transparent; border: 0; border-radius: var(--r-pill); padding: 6px 14px; cursor: pointer; }
+  .period-toggle button.active { background: var(--primary); color: var(--on-primary); }
+  /* The report gets a wider canvas than the marketing pages: two equal charts
+     per row, each wide enough for forty quarters. */
+  .top-nav .container, main.container, #loading { max-width: 1400px; }
+  .fund-grid { grid-template-columns: 1fr 1fr; gap: var(--sp-lg); }
+  .fund-grid .chart-card { min-width: 0; }
   .range-line { display: flex; flex-direction: column; gap: 4px; min-width: 210px; }
   .range-line .caption { color: var(--muted); display: flex; justify-content: space-between; gap: 16px; }
   .range-line .track { position: relative; height: 6px; border-radius: 3px; background: var(--surface-strong); }
@@ -27,7 +35,7 @@
   .rh-search .text-input { height: 42px; font-size: 14px; }
   .section-h { display: flex; align-items: baseline; gap: 12px; margin: 8px 0 16px; }
   @media (max-width: 1024px) { .stats-grid { grid-template-columns: repeat(3, 1fr); } .profile-grid { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .rh-search { width: 100%; margin-left: 0; } .rh-price { font-size: 38px; } }
+  @media (max-width: 768px) { .charts-grid, .fund-grid { grid-template-columns: 1fr; } .stats-grid { grid-template-columns: 1fr 1fr; } .rh-search { width: 100%; margin-left: 0; } .rh-price { font-size: 38px; } }
 </style>
 </head>
 <body>
@@ -96,13 +104,14 @@
   </section>
 
   <section style="margin-bottom:40px">
-    <div class="section-h"><h2 class="title-lg">Fundamentals</h2><span class="caption" style="color:var(--muted)">annual, from 10-K filings · <span id="fStamp"></span></span></div>
-    <div class="charts-grid" id="annualCharts"></div>
-  </section>
-
-  <section style="margin-bottom:40px">
-    <div class="section-h"><h2 class="title-lg">Recent quarters</h2><span class="caption" style="color:var(--muted)">from 10-Q filings · Q4 derived from full-year totals</span></div>
-    <div class="charts-grid" id="quarterCharts"></div>
+    <div class="section-h" style="flex-wrap:wrap;row-gap:10px;align-items:center">
+      <h2 class="title-lg">Fundamentals</h2>
+      <div class="period-toggle" id="periodTabs" role="group" aria-label="Period">
+        <button data-p="Q">Quarterly</button><button data-p="A">Annually</button>
+      </div>
+      <span class="caption" style="color:var(--muted)">ten years, from 10-K and 10-Q filings · <span id="fStamp"></span></span>
+    </div>
+    <div class="charts-grid fund-grid" id="fundCharts"></div>
   </section>
 
   <section style="margin-bottom:8px">
@@ -128,8 +137,8 @@
   </svg>
 </footer>
 
-<script src="assets/data.js?v=4"></script>
-<script src="assets/charts.js?v=4"></script>
-<script src="assets/company.js?v=10"></script>
+<script src="assets/data.js?v=5"></script>
+<script src="assets/charts.js?v=6"></script>
+<script src="assets/company.js?v=14"></script>
 </body>
 </html>

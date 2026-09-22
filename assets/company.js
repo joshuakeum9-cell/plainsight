@@ -134,6 +134,35 @@
 
   document.getElementById('fStamp').textContent = `updated ${PS.fmtUpdated(f.updated)}`;
 
+  // ---- expandable chart overlay ----
+  // Redraws the chart into a large panel; closes on Escape, backdrop click, or
+  // the close button, and restores focus to the button that opened it.
+  let lastExpander = null;
+  function openChart(title, sub, draw) {
+    lastExpander = document.activeElement;
+    const back = document.createElement('div');
+    back.className = 'chart-modal';
+    back.innerHTML = `<div class="chart-modal-panel" role="dialog" aria-modal="true" aria-label="${title}">`
+      + `<div class="chart-head"><div><h3>${title}</h3>${sub ? `<p class="chart-sub">${sentence(sub)}</p>` : ''}</div>`
+      + `<button class="chart-expand" type="button" aria-label="Close">✕</button></div>`
+      + `<div class="chart-box modal-box"></div></div>`;
+    document.body.appendChild(back);
+    document.body.style.overflow = 'hidden';
+    const close = () => {
+      back.remove();
+      document.body.style.overflow = '';
+      document.removeEventListener('keydown', onKey);
+      lastExpander?.focus();
+    };
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onKey);
+    back.addEventListener('click', (e) => { if (e.target === back) close(); });
+    back.querySelector('.chart-expand').addEventListener('click', close);
+    const box = back.querySelector('.modal-box');
+    draw(box, Math.max(320, Math.round(Math.min(620, innerHeight * 0.62))));
+    back.querySelector('.chart-expand').focus();
+  }
+
   // ---- fundamentals: one chart per metric, quarterly or annual ----
   const A = f.annual, Q = f.quarterly || {}, BQ = f.balancesQ || {};
   const seg = await PS.segments(t);
@@ -144,9 +173,19 @@
   const card = (title, sub, wide) => {
     const div = document.createElement('div');
     div.className = 'chart-card' + (wide ? ' wide' : '');
-    div.innerHTML = `<h3>${title}</h3>${sub ? `<p class="chart-sub">${sentence(sub)}</p>` : ''}<div class="chart-box"></div>`;
+    div.innerHTML = `<div class="chart-head"><div><h3>${title}</h3>${sub ? `<p class="chart-sub">${sentence(sub)}</p>` : ''}</div>`
+      + `<button class="chart-expand" type="button" aria-label="Expand ${title}" title="Expand">⤢</button></div><div class="chart-box"></div>`;
     grid.appendChild(div);
     return div.querySelector('.chart-box');
+  };
+  // Draw a chart and remember how to draw it again somewhere larger, so the
+  // expand button can re-render it at full size rather than scaling a small SVG.
+  const mount = (kind, title, sub, opts, wide) => {
+    const box = card(title, sub, wide);
+    const draw = (target, height) => PSCharts[kind](target, { ...opts, height });
+    box.closest('.chart-card').querySelector('.chart-expand')
+      .addEventListener('click', () => openChart(title, sub, draw));
+    draw(box, opts.height);
   };
   const align = (series, base) => base.map((b) => series.find((r) => r.end === b.end)?.v ?? null);
   const some = (vals) => vals.some((v) => v != null);
@@ -211,7 +250,7 @@
     const bar = (title, sub, values, color, o = {}) => {
       if (!some(values)) return;
       const useTTM = ttmOn && o.ttm != null;
-      PSCharts.barChart(card(title, sub + (useTTM ? ' · final bar is trailing 12 months' : '')), {
+      mount('barChart', title, sub + (useTTM ? ' · final bar is trailing 12 months' : ''), {
         labels: useTTM ? [...labels, 'TTM'] : labels,
         series: [{ name: title, color, values: useTTM ? [...values, o.ttm] : values }],
         fmt: o.fmt || PS.fmtMoney, negativeColor: 'var(--down)', growthLag: o.growth === false ? 0 : lag,
@@ -227,10 +266,10 @@
       if (!live.length) return;
       const lbls = o.labels || labels;
       if (o.linesWhenDense && !o.stacked && lbls.length > 16) {
-        PSCharts.lineChart(card(title, sub), { labels: lbls, series: live, fmt: (v, tick) => PS.fmtMoney(v, tick), height: H, fillGaps: true });
+        mount('lineChart', title, sub, { labels: lbls, series: live, fmt: (v, tick) => PS.fmtMoney(v, tick), height: H, fillGaps: true });
         return;
       }
-      PSCharts.barChart(card(title, sub), { labels: lbls, series: live, fmt: PS.fmtMoney, height: H, stacked: !!o.stacked, flags: o.flags || flags });
+      mount('barChart', title, sub, { labels: lbls, series: live, fmt: PS.fmtMoney, height: H, stacked: !!o.stacked, flags: o.flags || flags });
     };
 
     // 1. revenue
@@ -270,7 +309,7 @@
       { name: 'Operating', color: 'var(--chart-2)', values: pct(op) },
       { name: 'Net', color: 'var(--chart-3)', values: pct(ni) },
     ].filter((sr) => some(sr.values));
-    if (margins.length) PSCharts.lineChart(card('Margins', 'gross, operating and net profit as % of revenue'), { labels, series: margins, fmt: (v) => PS.fmtPct(v), fillGaps: true, height: H });
+    if (margins.length) mount('lineChart', 'Margins', 'gross, operating and net profit as % of revenue', { labels, series: margins, fmt: (v) => PS.fmtPct(v), fillGaps: true, height: H });
 
     // 4. per share
     if (!unreliable) {
@@ -323,7 +362,7 @@
       const ls = f.latestShares;
       const shNow = ls && newerThan(ls.end, sh.at(-1).end) && ls.v != null;
       const shVals = sh.map((r, i) => (r.v == null ? null : r.v * sf[i]));
-      PSCharts.lineChart(card('Shares outstanding', 'diluted weighted average by fiscal year, split-adjusted; falling means buybacks are shrinking the float' + (shNow ? ` · to ${PS.qLabel(ls.end)}` : '')), {
+      mount('lineChart', 'Shares outstanding', 'diluted weighted average by fiscal year, split-adjusted; falling means buybacks are shrinking the float' + (shNow ? ` · to ${PS.qLabel(ls.end)}` : ''), {
         labels: shNow ? [...sh.map((r) => PS.fyLabel(r.end)), PS.qLabel(ls.end)] : sh.map((r) => PS.fyLabel(r.end)),
         series: [{ name: 'Shares', color: 'var(--chart-1)', values: shNow ? [...shVals, ls.v] : shVals }],
         fmt: (v, tick) => PS.fmtNum(v, tick), height: H,

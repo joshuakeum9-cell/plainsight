@@ -173,6 +173,19 @@ table.data th.num { text-align: right; }
 
 /* ---- chart cards ---- */
 .chart-card { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-lg); padding: var(--sp-lg); }
+.chart-head { display: flex; align-items: flex-start; gap: var(--sp-sm); }
+.chart-head > div:first-child { min-width: 0; }
+.chart-expand { margin-left: auto; flex: none; font-family: var(--font); font-size: 14px; line-height: 1;
+  color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 5px 7px; cursor: pointer; }
+.chart-expand:hover { color: var(--ink); background: var(--surface-soft); border-color: var(--hairline); }
+.chart-expand:focus-visible { outline: 2px solid var(--chart-1); outline-offset: 1px; }
+.chart-modal { position: fixed; inset: 0; z-index: 60; background: rgba(10, 10, 10, .45);
+  display: flex; align-items: center; justify-content: center; padding: var(--sp-lg); }
+.chart-modal-panel { background: var(--canvas); border: 1px solid var(--hairline); border-radius: var(--r-lg);
+  padding: var(--sp-lg); width: min(1180px, 96vw); max-height: 92vh; overflow-y: auto;
+  box-shadow: 0 24px 70px rgba(10, 10, 10, .22); }
+@media (max-width: 768px) { .chart-modal { padding: var(--sp-sm); } .chart-modal-panel { padding: var(--sp-md); } }
 .chart-card h3 { font-size: 16px; font-weight: 600; color: var(--ink); }
 .chart-card .chart-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
 .chart-box { position: relative; margin-top: var(--sp-md); }

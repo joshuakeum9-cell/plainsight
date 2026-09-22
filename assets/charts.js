@@ -217,6 +217,8 @@
     const barW = opts.stacked ? groupW : (groupW - gap * (series.length - 1)) / series.length;
     const tip = makeTip(box);
 
+    let lastGrowthLabel = null; // right edge of the last growth label drawn
+
     // rounded outward end, flat at baseline
     function barPath(x, v, y0, y1, w) {
       const r = Math.min(4, w / 2, Math.abs(y1 - y0));
@@ -262,13 +264,22 @@
         });
         p.addEventListener('pointerleave', () => { p.removeAttribute('opacity'); tip.style.display = 'none'; });
         svg.appendChild(p);
-        // growth label riding the bar's outward end
-        if (g != null && labels.length <= 14) {
+        // Growth label riding the bar's outward end. Drawn only where there is
+        // room: charts are now sized in real pixels, so the slot width decides,
+        // and a label that would run into the one before it is left out rather
+        // than overprinting it.
+        if (g != null && slot >= 30) {
+          const text = fmtGrowth(g);
+          const cx = x + barW / 2, halfW = text.length * 3.2;
           const ly = v >= 0 ? Math.min(y0, y1) - 6 : Math.max(y0, y1) + 13;
-          const txt = el('text', { x: x + barW / 2, y: ly, 'text-anchor': 'middle', 'font-size': 10.5, 'font-weight': 600,
-            fill: g >= 0 ? 'var(--up)' : 'var(--down)' });
-          txt.textContent = fmtGrowth(g);
-          svg.appendChild(txt);
+          const clash = lastGrowthLabel && cx - halfW < lastGrowthLabel.x2 + 2 && Math.abs(ly - lastGrowthLabel.y) < 14;
+          if (!clash) {
+            const txt = el('text', { x: cx, y: ly, 'text-anchor': 'middle', 'font-size': 10.5, 'font-weight': 600,
+              fill: g >= 0 ? 'var(--up)' : 'var(--down)' });
+            txt.textContent = text;
+            svg.appendChild(txt);
+            lastGrowthLabel = { x2: cx + halfW, y: ly };
+          }
         }
       });
     }

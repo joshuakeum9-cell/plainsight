@@ -239,9 +239,16 @@
     // filings have not broken down yet is simply an empty slot.
     const segByEnd = new Map(((seg && seg.members?.length >= 2 ? (isQ ? seg.quarterly : seg.annual) : null) || []).map((r) => [r.end, r]));
     if (segByEnd.size >= (isQ ? 4 : 2)) {
-      grouped('Revenue by segment', `${AXIS_NAME[seg.axis] || 'as reported'} · from the 10-K${isQ ? ' and 10-Qs' : ''}`,
-        seg.members.map((m, i) => ({ name: m.label, color: PALETTE[i % PALETTE.length], values: base.map((b) => segByEnd.get(b.end)?.values[m.id] ?? null) })),
-        { stacked: true, flags: base.map((b) => (segByEnd.get(b.end)?.d ? '(derived)' : '')) });
+      // Companies start breaking revenue down in their filings at different
+      // dates (Apple's product categories only from fiscal 2019), so this chart
+      // begins at the first period that has a split rather than padding the
+      // left with empty years, and the subtitle says when that is.
+      const firstIdx = base.findIndex((b) => segByEnd.has(b.end));
+      const segBase = base.slice(firstIdx);
+      const since = firstIdx > 0 ? ` · reported from ${labelOf(segBase[0])}; earlier filings did not split revenue` : '';
+      grouped('Revenue by segment', `${AXIS_NAME[seg.axis] || 'as reported'} · from the 10-K${isQ ? ' and 10-Qs' : ''}${since}`,
+        seg.members.map((m, i) => ({ name: m.label, color: PALETTE[i % PALETTE.length], values: segBase.map((b) => segByEnd.get(b.end)?.values[m.id] ?? null) })),
+        { stacked: true, labels: segBase.map(labelOf), flags: segBase.map((b) => (segByEnd.get(b.end)?.d ? '(derived)' : '')) });
     }
 
     // 3. profitability

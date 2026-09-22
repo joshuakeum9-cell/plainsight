@@ -207,6 +207,21 @@ function seriesFor(facts, choice, filter) {
 }
 
 // ---- per company ----
+// The submissions JSON lists only the newest ~1,000 filings inline; a company
+// that files a lot (Microsoft: 8-Ks, Form 4s, ...) keeps its ten-year-old
+// 10-Qs in paginated overflow files, which are fetched and appended here.
+const COLS = ['form', 'reportDate', 'filingDate', 'accessionNumber', 'primaryDocument'];
+async function allFilings(data) {
+  const r = Object.fromEntries(COLS.map((k) => [k, [...(data.filings.recent[k] || [])]]));
+  for (const f of data.filings.files || []) {
+    const page = await fetchJSON(`https://data.sec.gov/submissions/${f.name}`);
+    await sleep(200);
+    if (!page.ok) continue;
+    for (const k of COLS) r[k].push(...(page.data[k] || []));
+  }
+  return r;
+}
+
 // Same holdco rule as refresh-fundamentals: ExxonMobil Holdings has no 10-K yet,
 // the operating company under the old CIK has decades of them.
 const PREDECESSOR_CIK = { XOM: '0000034088' };
@@ -216,13 +231,12 @@ async function refresh(co) {
   let cik = co.cik;
   let sub = await fetchJSON(`https://data.sec.gov/submissions/CIK${cik}.json`);
   if (!sub.ok) return 'nosub';
-  let r = sub.data.filings.recent;
-  if (!r.form.includes('10-K') && PREDECESSOR_CIK[co.t]) {
+  if (!sub.data.filings.recent.form.includes('10-K') && PREDECESSOR_CIK[co.t]) {
     cik = PREDECESSOR_CIK[co.t];
     sub = await fetchJSON(`https://data.sec.gov/submissions/CIK${cik}.json`);
     if (!sub.ok) return 'nosub';
-    r = sub.data.filings.recent;
   }
+  const r = await allFilings(sub.data);
   // Ten years, matching the revenue chart, from as few documents as possible: a
   // 10-K carries three fiscal years of segment data, so every third 10-K covers
   // the annual series; a 10-Q carries its quarter and the same quarter a year
@@ -240,7 +254,7 @@ async function refresh(co) {
   if (existsSync(path)) {
     try {
       const prev = await readJSON(path);
-      if (JSON.stringify(prev.source?.accns) === JSON.stringify(accns)) return 'cached';
+      if (prev.source?.v === 2 && JSON.stringify(prev.source?.accns) === JSON.stringify(accns)) return 'cached';
     } catch { /* rewrite */ }
   }
   const cikNum = parseInt(cik, 10);
@@ -251,8 +265,12 @@ async function refresh(co) {
     const stem = (r.primaryDocument[i] || '').replace(/\.htm$/, '');
     if (!stem) continue;
     const base = `https://www.sec.gov/Archives/edgar/data/${cikNum}/${acc}/${stem}`;
-    const xml = await fetchText(`${base}_htm.xml`);
+    // Inline-XBRL filings (mid-2019 on) expose the instance as <stem>_htm.xml;
+    // older ones ship a plain <stem>.xml. Without the fallback nothing before
+    // 2019 was being read, for any company.
+    let xml = await fetchText(`${base}_htm.xml`);
     await sleep(250);
+    if (!xml.ok && xml.status === 404) { xml = await fetchText(`${base}.xml`); await sleep(250); }
     if (!xml.ok) continue;
     const parsed = parseFacts(xml.text, parseContexts(xml.text));
     for (const [tag, rows] of parsed) facts.set(tag, [...(facts.get(tag) || []), ...rows]);
@@ -264,7 +282,7 @@ async function refresh(co) {
   }
   const choice = chooseBreakdown(facts);
   if (!choice) {
-    await writeJSON(path, { updated: new Date().toISOString(), symbol: co.t, axis: null, members: [], annual: [], quarterly: [], source: { accns } });
+    await writeJSON(path, { updated: new Date().toISOString(), symbol: co.t, axis: null, members: [], annual: [], quarterly: [], source: { v: 2, accns } });
     return 'nobreakdown';
   }
   const label = (m) => labels.get(m.replace(':', '_')) || humanize(m);
@@ -293,7 +311,7 @@ async function refresh(co) {
     members: choice.memberIds.map((id) => ({ id, label: label(id) })),
     annual: annual.map((a) => ({ end: a.end, values: rnd(a.values) })),
     quarterly: quarters.map((q) => ({ end: q.end, values: rnd(q.values), ...(q.d ? { d: 1 } : {}) })),
-    source: { accns },
+    source: { v: 2, accns },
   });
   return 'ok';
 }

@@ -210,8 +210,10 @@
 
     const plotW = W - padL - padR;
     const slot = plotW / labels.length;
-    const gap = 2;
-    const groupW = Math.min(slot * 0.72, 64);
+    // Tighter than the single-series default so grouped bars keep some body
+    // when forty groups share a card.
+    const gap = series.length > 1 ? 1 : 2;
+    const groupW = Math.min(slot * (series.length > 1 ? 0.84 : 0.72), 64);
     const barW = opts.stacked ? groupW : (groupW - gap * (series.length - 1)) / series.length;
     const tip = makeTip(box);
 

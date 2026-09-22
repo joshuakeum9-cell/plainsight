@@ -216,10 +216,18 @@
         lastBarColor: useTTM ? 'var(--chart-5)' : undefined, lastBarNote: useTTM ? ttmNote : undefined,
       });
     };
+    // Side-by-side bars for several series work for ten years; over forty
+    // quarters each bar is a hairline, so snapshot comparisons (balance sheet,
+    // cash against debt) switch to lines in the quarterly view.
     const grouped = (title, sub, series, o = {}) => {
       const live = series.filter((sr) => some(sr.values));
       if (!live.length) return;
-      PSCharts.barChart(card(title, sub), { labels: o.labels || labels, series: live, fmt: PS.fmtMoney, height: H, stacked: !!o.stacked, flags: o.flags || flags });
+      const lbls = o.labels || labels;
+      if (o.linesWhenDense && !o.stacked && lbls.length > 16) {
+        PSCharts.lineChart(card(title, sub), { labels: lbls, series: live, fmt: (v, tick) => PS.fmtMoney(v, tick), height: H, fillGaps: true });
+        return;
+      }
+      PSCharts.barChart(card(title, sub), { labels: lbls, series: live, fmt: PS.fmtMoney, height: H, stacked: !!o.stacked, flags: o.flags || flags });
     };
 
     // 1. revenue
@@ -279,7 +287,7 @@
     grouped('Cash and debt', 'cash and equivalents against total borrowings', [
       { name: 'Cash', color: 'var(--chart-1)', values: cash },
       { name: 'Debt', color: 'var(--chart-2)', values: debt },
-    ]);
+    ], { linesWhenDense: true });
     const bl = isQ ? base : (B.assets || []).slice(-10);
     const lb = f.latestBalance;
     const bsNow = !isQ && lb && newerThan(lb.end, bl.at(-1)?.end) && lb.assets != null;
@@ -288,7 +296,7 @@
       { name: 'Assets', color: 'var(--chart-1)', values: align(B.assets || [], bl).concat(bsNow ? [lb.assets] : []) },
       { name: 'Liabilities', color: 'var(--chart-2)', values: align(B.liabilities || [], bl).concat(bsNow ? [lb.liabilities] : []) },
       { name: 'Equity', color: 'var(--chart-4)', values: align(B.equity || [], bl).concat(bsNow ? [lb.equity] : []) },
-    ], { labels: bsLabels, flags: bsLabels.map(() => '') });
+    ], { labels: bsLabels, flags: bsLabels.map(() => ''), linesWhenDense: true });
 
     // 7. shareholders
     const bb = align(src.buybacks || [], base), dv = align(src.dividendsPaid || [], base);

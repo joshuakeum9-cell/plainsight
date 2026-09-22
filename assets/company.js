@@ -225,7 +225,10 @@
   const newerThan = (end, base) => end && base && Date.parse(end) - Date.parse(base) > 45 * 86400000;
   const PALETTE = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)',
     'var(--brand-peach)', 'var(--brand-lavender)', 'var(--brand-coral)', 'var(--brand-ochre)'];
-  const AXIS_NAME = { 'srt:ProductOrServiceAxis': 'by product and service', 'us-gaap:StatementBusinessSegmentsAxis': 'by business segment', 'srt:StatementGeographicalAxis': 'by geography' };
+  // Keyed on the axis local name; the pipeline stores it without a namespace
+  // prefix, which varies between filers.
+  const AXIS_NAME = { ProductOrServiceAxis: 'by product and service', StatementBusinessSegmentsAxis: 'by business segment', StatementGeographicalAxis: 'by geography' };
+  const axisLabel = (a) => (a ? AXIS_NAME[a.split(':').pop()] : null) || 'as reported';
 
   function render(period) {
     grid.innerHTML = '';
@@ -288,7 +291,7 @@
       const firstIdx = base.findIndex((b) => segByEnd.has(b.end));
       const segBase = base.slice(firstIdx);
       const since = firstIdx > 0 ? ` · reported from ${labelOf(segBase[0])}, earlier filings did not split revenue` : '';
-      grouped('Revenue by segment', `${AXIS_NAME[seg.axis] || 'as reported'} · from the 10-K${isQ ? ' and 10-Qs' : ''}${since}`,
+      grouped('Revenue by segment', `${axisLabel(seg.axis)} · from the 10-K${isQ ? ' and 10-Qs' : ''}${since}`,
         seg.members.map((m, i) => ({ name: m.label, color: PALETTE[i % PALETTE.length], values: segBase.map((b) => segByEnd.get(b.end)?.values[m.id] ?? null) })),
         { stacked: true, labels: segBase.map(labelOf), flags: segBase.map((b) => (segByEnd.get(b.end)?.d ? '(derived)' : '')) });
     }

@@ -17,8 +17,12 @@ if (process.env.LIMIT) companies = companies.slice(0, +process.env.LIMIT);
 
 const REVENUE_TAGS = ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet',
   'RevenueFromContractWithCustomerIncludingAssessedTax', 'RevenuesNetOfInterestExpense', 'RegulatedAndUnregulatedOperatingRevenue'];
-// Preference order when a filer breaks revenue down several ways.
-const AXES = ['srt:ProductOrServiceAxis', 'us-gaap:StatementBusinessSegmentsAxis', 'srt:StatementGeographicalAxis'];
+// Preference order when a filer breaks revenue down several ways. Matched on the
+// local name: the same axis appears under different namespace prefixes from one
+// filer to the next (MajorCustomersAxis is srt: for UnitedHealth, CVS and Apple),
+// and comparing the qualified name silently discarded those breakdowns.
+const AXES = ['ProductOrServiceAxis', 'StatementBusinessSegmentsAxis', 'StatementGeographicalAxis'];
+const localName = (qname) => qname.split(':').pop();
 const days = (a, b) => (Date.parse(b) - Date.parse(a)) / 86400000;
 const fileSym = (t) => t.replace(/\./g, '-');
 
@@ -30,12 +34,12 @@ function parseContexts(xml) {
     const inner = m[2];
     const sd = /<(?:\w+:)?startDate>([\d-]+)</.exec(inner), ed = /<(?:\w+:)?endDate>([\d-]+)</.exec(inner);
     if (!sd || !ed) continue;
-    const dims = [...inner.matchAll(/dimension="([^"]+)"[^>]*>([^<]+)</g)].map((d) => [d[1], d[2].trim()]);
+    const dims = [...inner.matchAll(/dimension="([^"]+)"[^>]*>([^<]+)</g)].map((d) => [localName(d[1]), d[2].trim()]);
     // Two axes are wrappers rather than breakdowns: ConsolidationItems ("operating
     // segments" vs eliminations/corporate) and MajorCustomers ("external" vs
     // "intersegment"). UnitedHealth books $168B of intersegment revenue; only
     // the external view reconciles to the income statement.
-    const WRAP = { 'srt:ConsolidationItemsAxis': /OperatingSegmentsMember/, 'us-gaap:MajorCustomersAxis': /ExternalCustomer/ };
+    const WRAP = { ConsolidationItemsAxis: /OperatingSegmentsMember/, MajorCustomersAxis: /ExternalCustomer/ };
     let skip = false, ext = false;
     for (const [axis, member] of dims) {
       if (!WRAP[axis]) continue;
@@ -170,8 +174,15 @@ function chooseBreakdown(facts) {
       // One row per member (the same fact recurs across statements), then drop
       // members that are aliases of another (identical value: "Service" and
       // "Services") so neither inflates the count or the coverage.
+      // Where a filer publishes both views of a segment, use the
+      // external-customer one for ALL members rather than per member: merging
+      // twenty filings makes per-row preference depend on document order, and
+      // mixing the two double-counts (UnitedHealth's segments summed to $892B
+      // against $448B of revenue).
       const seen = [];
-      const distinct = oneRowPerMember(latestRows.filter((r) => r.start === period.start)).filter((r) => {
+      const atPeriod = latestRows.filter((r) => r.start === period.start);
+      const pool = atPeriod.some((r) => r.ext) ? atPeriod.filter((r) => r.ext) : atPeriod;
+      const distinct = oneRowPerMember(pool).filter((r) => {
         if (seen.some((v) => Math.abs(v - r.val) <= Math.abs(r.val) * 0.001)) return false;
         seen.push(r.val); return true;
       });
@@ -179,7 +190,10 @@ function chooseBreakdown(facts) {
       if (members.length < 2) continue;
       const total = totals.get(period.start + '|' + period.end);
       const coverage = total ? members.reduce((s, r) => s + r.val, 0) / total : null;
-      if (coverage != null && (coverage < 0.7 || coverage > 1.15)) continue;
+      // Segment revenue usually includes intersegment sales that the income
+      // statement eliminates, so the parts can legitimately exceed the whole
+      // (CVS: $473B across three segments against $402B of revenue).
+      if (coverage != null && (coverage < 0.7 || coverage > 1.3)) continue;
       // A split the company also reports quarterly is worth more than one that
       // only appears in the 10-K (Amazon: NA / International / AWS every quarter,
       // country geography once a year).
@@ -203,7 +217,10 @@ function seriesFor(facts, choice, filter) {
     byEnd.get(r.end).push(r);
   }
   return [...byEnd.entries()].sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([end, list]) => ({ end, values: Object.fromEntries(oneRowPerMember(list).map((r) => [r.member, r.val])) }));
+    .map(([end, list]) => {
+      const pool = list.some((r) => r.ext) ? list.filter((r) => r.ext) : list;
+      return { end, values: Object.fromEntries(oneRowPerMember(pool).map((r) => [r.member, r.val])) };
+    });
 }
 
 // ---- per company ----

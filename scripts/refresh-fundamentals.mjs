@@ -171,7 +171,19 @@ const toAnnual = (rows) => {
   for (const r of rows) byEndYear.set(r.end.slice(0, 4), r); // later end dates win within a year label
   return [...byEndYear.values()].map((r) => ({ end: r.end, v: r.val })).slice(-11);
 };
-const toQuarter = (rows) => rows.slice(-48).map((r) => ({ end: r.end, v: r.val }));
+// One row per period end. Filers sometimes tag the same quarter under two
+// start dates (July 1 and June 30 for a September quarter), which showed up as
+// a duplicated quarter and threw every later year-over-year comparison off by
+// one; keep the row whose span is closest to a real quarter.
+const toQuarter = (rows) => {
+  const byEnd = new Map();
+  for (const r of rows) {
+    const span = Math.abs((Date.parse(r.end) - Date.parse(r.start)) / 86400000 - 91);
+    const prev = byEnd.get(r.end);
+    if (!prev || span < prev.span) byEnd.set(r.end, { end: r.end, v: r.val, span });
+  }
+  return [...byEnd.values()].sort((a, b) => a.end.localeCompare(b.end)).slice(-48).map(({ end, v }) => ({ end, v }));
+};
 
 function annualSeries(gaap, tags, cik, pickMax) {
   return toAnnual(collect(gaap, tags, isAnnualSpan, cik, pickMax));

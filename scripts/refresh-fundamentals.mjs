@@ -256,7 +256,20 @@ function ytdQuarters(gaap, tags, cik) {
 }
 function mergeQuarters(discrete, derived) {
   const have = new Set(discrete.map((q) => q.end));
-  return [...discrete, ...derived.filter((q) => !have.has(q.end))].sort((a, b) => a.end.localeCompare(b.end)).slice(-44);
+  return dedupeByEnd([...discrete, ...derived.filter((q) => !have.has(q.end))]).slice(-44);
+}
+
+// Final guard on an assembled quarterly series: one row per period end, a
+// reported quarter always beating a derived one. Two year-to-date chains can
+// each yield a value for the same quarter (Deere differenced $1.63B and $1.64B
+// for July 2016), which duplicated the row and shifted later comparisons.
+function dedupeByEnd(rows) {
+  const byEnd = new Map();
+  for (const r of rows) {
+    const prev = byEnd.get(r.end);
+    if (!prev || (prev.d && !r.d)) byEnd.set(r.end, r);
+  }
+  return [...byEnd.values()].sort((a, b) => a.end.localeCompare(b.end));
 }
 
 // Derive Q4 = FY - (Q1+Q2+Q3) for flow concepts, then build a full quarter list.
@@ -273,7 +286,7 @@ function withDerivedQ4(quarters, annuals) {
       out.push({ end: a.end, v: a.v - inYear.reduce((s, q) => s + q.v, 0), d: 1 });
     }
   }
-  return out.sort((a, b) => a.end.localeCompare(b.end)).slice(-44);
+  return dedupeByEnd(out).slice(-44);
 }
 
 // Some filers tag a full-year figure with a quarter-length period: L3Harris put
